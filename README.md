@@ -1,5 +1,5 @@
 # Code deposition for the paper: B Cells Promote T Cell Immunosenescence and Mammalian Aging Parameters
-1. *B_T_scRNAseq_analysis.R:* This R script performs 5’ single-cell transcriptomics, including VDJ T cell receptor analyses on splenic CD3+ cells from aged µMT and WT mice.
+1. *B_T_scRNAseq_analysis.R:* This R script performs 5’ single-cell transcriptomics, including VDJ T cell receptor analyses on splenic CD3+ cells from aged µMT and WT mice. The gene list used for volcano plot are in the folder 'volcano_plot_genes'.
 3. *PICseq_Seurat.R:* This R script is used for analyzing single-cell RNA-seq data from B and T cell and physically interacting cells (PICs).
 4. *B2T_nichenet.R:* This script utilizes the NicheNet framework to analyze B-to-T cell interactions, identifying ligand-receptor pairs that may mediate communication between these cells.
 5. *PICseq_script.R:* This R script is specifically used for PICseq analysis.
