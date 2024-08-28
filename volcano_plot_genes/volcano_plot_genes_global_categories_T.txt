@@ -1,0 +1,52 @@
+category	direction	symbol
+Inflammatory / Memory 	up_Aged	Ier3
+Inflammatory / Memory 	up_Aged	Ccl4
+Inflammatory / Memory 	up_Aged	Ccl3
+Inflammatory / Memory 	up_Aged	Gzmb
+Inflammatory / Memory 	up_Aged	Ccl5
+Inflammatory / Memory 	up_Aged	Ifng
+Inflammatory / Memory 	up_Aged	Cd38
+Inflammatory / Memory 	up_Aged	Ly6a
+Inflammatory / Memory 	up_Aged	Nrp1
+Inflammatory / Memory 	up_Aged	Cxcr3
+Inflammatory / Memory 	up_Aged	Cd44
+Inflammatory / Memory 	up_Aged	Tnf
+Age-Related Signature	up_Aged	Gzmk
+Age-Related Signature	up_Aged	Lag3
+Age-Related Signature	up_Aged	Tigit
+Age-Related Signature	up_Aged	Pdcd1
+Age-Related Signature	up_Aged	Cish
+Age-Related Signature	up_Aged	AW112010
+Age-Related Signature	up_Aged	Tox
+Age-Related Signature	up_Aged	S100a11
+Age-Related Signature	up_Aged	Izumo1r
+TCR Signalling / APC Mediated Activation	up_Aged	Tnfrsf4
+TCR Signalling / APC Mediated Activation	up_Aged	Ctla4
+TCR Signalling / APC Mediated Activation	up_Aged	Cxcr5
+TCR Signalling / APC Mediated Activation	up_Aged	Cd82
+TCR Signalling / APC Mediated Activation	up_Aged	Icos
+TCR Signalling / APC Mediated Activation	up_Aged	Zap70
+Transcription Factors	up_Aged	Bhlhe40
+Transcription Factors	up_Aged	Prdm1
+Transcription Factors	up_Aged	Maf
+Transcription Factors	up_Aged	Eomes
+Transcription Factors	up_Aged	Tox2
+Transcription Factors	up_Aged	Batf
+Transcription Factors	up_Aged	Ikzf2
+Transcription Factors	up_Aged	Rora
+Transcription Factors	up_Aged	Foxp3
+Transcription Factors	up_Aged	Tbx21
+Transcription Factors	up_Aged	Hif1a
+Transcription Factors	up_Aged	Gata3
+Inflammatory / Memory 	down_Young	Id3
+Inflammatory / Memory 	down_Young	Cd55
+Inflammatory / Memory 	down_Young	Bach2
+Inflammatory / Memory 	down_Young	Sell
+Inflammatory / Memory 	down_Young	Dapl1
+Age-Related Signature	down_Young	Satb1
+Age-Related Signature	down_Young	Lef1
+Age-Related Signature	down_Young	Ccr7
+Age-Related Signature	down_Young	Ccr9
+Transcription Factors	down_Young	Klf2
+Transcription Factors	down_Young	Foxo1
+Transcription Factors	down_Young	Tcf7
