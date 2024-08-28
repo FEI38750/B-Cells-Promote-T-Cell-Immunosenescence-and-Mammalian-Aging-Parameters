@@ -12,7 +12,7 @@ T_markers <- intersect(T_markers,row.names(T_cell.combined[["RNA"]]$counts))
 B_markers <- intersect(B_markers,row.names(B_cell.combined[["RNA"]]$counts))
 
 # subset the matrix by top DEGs for each cell type
-DEGnumber <- 10
+DEGnumber <- 5
 top_gene_per_cluster.T <- T_cell.markers.all %>%
   group_by(cluster) %>%
   arrange(desc(avg_log2FC)) %>%
@@ -175,7 +175,7 @@ B_cell.combined@meta.data$cell_type <- case_when(B_cell.combined@meta.data$sub.c
 
 
 # import PICs prediction result
-# PICs_predicted <- read.csv("PICs_predict_0408.csv")
+PICs_predicted_v1 <- read.csv("PICs_predict_v1.csv")
 PICs_anno <- PICs_predicted %>% select(c(Cell_ID,pred))
 
 # set the coresponding cell type names after translation
@@ -194,7 +194,6 @@ for (t in major_T){
 }
 PICs_anno$pred_trans <- toTranslate_name
 
-PICs_predicted_v1 <- read.csv("PICs_predict_v1.csv")
 PICs_predicted_v1 <- PICs_predicted_v1 %>% select(c(Cell_ID,pred))
 PICs_predicted_v2 <- PICs_anno
 sum(PICs_predicted_v1$pred == PICs_predicted_v2$pred)/length(PICs_predicted_v2$pred)
