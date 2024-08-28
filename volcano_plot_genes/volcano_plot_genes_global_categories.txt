@@ -1,0 +1,46 @@
+category	direction	symbol
+Age-Related Signature	up_KO	Ccr7
+Age-Related Signature	up_KO	Lef1
+Age-Related Signature	up_KO	Satb1
+Inflammatory/Memory	up_KO	Cd55
+Inflammatory/Memory	up_KO	Sell
+Inflammatory/Memory	up_KO	Dapl1
+Age-Related Signature	down_KO	Izumo1r
+Age-Related Signature	down_KO	Tigit
+Age-Related Signature	down_KO	Lag3
+Age-Related Signature	down_KO	Gzmk
+Age-Related Signature	down_KO	S100a11
+Age-Related Signature	down_KO	Itga4
+Age-Related Signature	down_KO	Tox
+Age-Related Signature	down_KO	Pdcd1
+Age-Related Signature	down_KO	AW112010
+Inflammatory/Memory	down_KO	Ly6a
+Inflammatory/Memory	down_KO	Sostdc1
+Inflammatory/Memory	down_KO	Ier3
+Inflammatory/Memory	down_KO	Nrp1
+Inflammatory/Memory	down_KO	Ifng
+Inflammatory/Memory	down_KO	Il21
+Inflammatory/Memory	down_KO	Tnf
+Inflammatory/Memory	down_KO	Cd44
+Inflammatory/Memory	down_KO	Cd38
+TCR Signalling/APC Mediated Activation	down_KO	Ctla4
+TCR Signalling/APC Mediated Activation	down_KO	Tnfrsf4
+TCR Signalling/APC Mediated Activation	down_KO	Cd82
+TCR Signalling/APC Mediated Activation	down_KO	Icos
+TCR Signalling/APC Mediated Activation	down_KO	Zap70
+TCR Signalling/APC Mediated Activation	down_KO	Lat
+TCR Signalling/APC Mediated Activation	down_KO	Nr4a1
+TCR Signalling/APC Mediated Activation	down_KO	Cxcr5
+TCR Signalling/APC Mediated Activation	down_KO	Lck
+Transcription Factors	down_KO	Bhlhe40
+Transcription Factors	down_KO	Hif1a
+Transcription Factors	down_KO	Ikzf2
+Transcription Factors	down_KO	Batf
+Transcription Factors	down_KO	Bcl6
+Transcription Factors	down_KO	Rora
+Transcription Factors	down_KO	Gata3 
+Transcription Factors	down_KO	Foxp3
+Transcription Factors	down_KO	Maf
+Senescence	down_KO	Cdkn1b
+Senescence	down_KO	Cdkn2a
+Senescence	down_KO	Cdkn1a
