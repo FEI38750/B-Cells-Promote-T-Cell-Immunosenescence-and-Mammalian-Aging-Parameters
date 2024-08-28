@@ -81,7 +81,7 @@ for (t in major_T){
 combined_data <- purrr::reduce(combined_data.ls, bind_rows)
 combined_data$AD_label <- as.factor(combined_data$AD_label)
 
-# export the matrix
+# export the matrix for training classifier to predict PICs, continue in the script 'Classifier4PICs.ipynb'
 write.csv(combined_data,"TB_combined_data.csv") # normalized without scale
 
 
@@ -94,7 +94,7 @@ PICs_pred <- as.data.frame(t(PICs_pred))
 # scale the data
 PICs_pred_scaled <- scale(PICs_pred)
 
-# export the matrix for model building
+# export the matrix for model building in the script 'Classifier4PICs.ipynb' 
 # faster but bigger size in csv
 write.csv(PICs_pred,"PICs_pred.csv") # normalized without scale
 
@@ -174,7 +174,7 @@ B_cell.combined@meta.data$cell_type <- case_when(B_cell.combined@meta.data$sub.c
 
 
 
-# import PICs prediction result
+# import PICs prediction result from the output of the script 'Classifier4PICs.ipynb' 
 PICs_predicted_v1 <- read.csv("PICs_predict_v1.csv")
 PICs_anno <- PICs_predicted %>% select(c(Cell_ID,pred))
 
