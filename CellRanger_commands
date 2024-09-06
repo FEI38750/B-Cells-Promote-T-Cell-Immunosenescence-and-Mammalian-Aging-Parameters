@@ -1,0 +1,29 @@
+# KO_T_Cells_5pr_V2
+cellranger count --disable-ui --id=Winer_Saad__KO_T_Cells_5pr_V2 --sample=KO_T_Cells_5pr_V2 --fastqs=./Unaligned/Winer_Saad --transcriptome=/cluster/tools/data/commondata/cellranger/refdata-gex-mm10-2020-A --jobmode=local --localcores=8 --localmem=48 --expect-cells=10000 --chemistry=SC5P-R2
+
+# WT_T_Cells_5pr_V2
+cellranger count --disable-ui --id=Winer_Saad__WT_T_Cells_5pr_V2 --sample=WT_T_Cells_5pr_V2 --fastqs=./Unaligned/Winer_Saad --transcriptome=/cluster/tools/data/commondata/cellranger/refdata-gex-mm10-2020-A --jobmode=local --localcores=8 --localmem=48 --expect-cells=10000 --chemistry=SC5P-R2
+
+# KO_T_Cells_TCR
+cellranger vdj --id=Winer_Saad__KO_T_Cells_TCR --sample=KO_T_Cells_TCR --fastqs=./Unaligned/Winer_Saad --reference=/cluster/tools/data/commondata/cellranger/refdata-cellranger-vdj-GRCm38-alts-ensembl-5.0.0 --jobmode=local --localcores=8 --localmem=48
+
+# WT_T_Cells_TCR
+cellranger vdj --id=Winer_Saad__WT_T_Cells_TCR --sample=WT_T_Cells_TCR --fastqs=./Unaligned/Winer_Saad --reference=/cluster/tools/data/commondata/cellranger/refdata-cellranger-vdj-GRCm38-alts-ensembl-5.0.0 --jobmode=local --localcores=8 --localmem=48
+
+# Aged_B_Cells_5pr_V2
+cellranger count --disable-ui --id=Winer_Saad__Aged_B_Cells_5pr_V2 --sample=Aged_B_Cells_5pr_V2 --fastqs=Unaligned/Winer_Saad --transcriptome=/cluster/tools/data/commondata/cellranger/refdata-gex-mm10-2020-A --jobmode=local --localcores=8 --localmem=48 --expect-cells=10000 --chemistry=SC5P-R2
+
+# Aged_T_Cells_5pr_V2
+cellranger count --disable-ui --id=Winer_Saad__Aged_T_Cells_5pr_V2 --sample=Aged_T_Cells_5pr_V2 --fastqs=Unaligned/Winer_Saad --transcriptome=/cluster/tools/data/commondata/cellranger/refdata-gex-mm10-2020-A --jobmode=local --localcores=8 --localmem=48 --expect-cells=10000 --chemistry=SC5P-R2
+
+# Aged_PICS_5pr_v2
+cellranger count --disable-ui --id=Winer_Saad__Aged_PICS_5pr_v2 --sample=Aged_PICS_5pr_v2 --fastqs=Unaligned/Winer_Saad --transcriptome=/cluster/tools/data/commondata/cellranger/refdata-gex-mm10-2020-A --jobmode=local --localcores=8 --localmem=48 --expect-cells=10000 --chemistry=SC5P-R2
+
+# Young_B_Cells_5pr_V2
+cellranger count --disable-ui --id=Winer_Saad__Young_B_Cells_5pr_V2 --sample=Young_B_Cells_5pr_V2 --fastqs=Unaligned/Winer_Saad --transcriptome=/cluster/tools/data/commondata/cellranger/refdata-gex-mm10-2020-A --jobmode=local --localcores=8 --localmem=48 --expect-cells=10000 --chemistry=SC5P-R2
+
+# Young_T_Cells_5pr_V2
+cellranger count --disable-ui --id=Winer_Saad__Young_T_Cells_5pr_V2 --sample=Young_T_Cells_5pr_V2 --fastqs=Unaligned/Winer_Saad --transcriptome=/cluster/tools/data/commondata/cellranger/refdata-gex-mm10-2020-A --jobmode=local --localcores=8 --localmem=48 --expect-cells=10000 --chemistry=SC5P-R2
+
+# Young_PICS_5pr_V2
+cellranger count --disable-ui --id=Winer_Saad__Young_PICS_5pr_V2 --sample=Young_PICS_5pr_V2 --fastqs=Unaligned/Winer_Saad --transcriptome=/cluster/tools/data/commondata/cellranger/refdata-gex-mm10-2020-A --jobmode=local --localcores=8 --localmem=48 --expect-cells=10000 --chemistry=SC5P-R2
