@@ -5,5 +5,5 @@
 4. *B2T_nichenet.R and T2B_nichenet.R:* Those scripts utilizes the NicheNet framework to analyze B-to-T cell interactions, identifying ligand-receptor pairs that may mediate communication between these cells.
 5. *PICseq_script.R:* This R script is specifically used for PICseq analysis.
 6. *Classifier4PICs.ipynb:* This Jupyter notebook is used for training and applying a Stacked Ensemble model to predict PICs. The matrices required for training and prediction are imported from the script PICseq_script.R between lines 84 and 99.
-7. * GeoMx_code_Spleen.rtf:* Code for processing GeoMx data.
+7. *GeoMx_code_Spleen.rtf:* Code for processing GeoMx data.
 
