@@ -1,0 +1,1366 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2761
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 # Serban Ciotlos PhD, Scientist - Melov Lab\
+# 04/02/2024\
+\
+\
+library(ggforce)\
+library(standR)\
+library(SpatialExperiment)\
+library(SummarizedExperiment)\
+library(ggplot2)\
+library(ggalluvial)\
+library(BiocSingular)\
+library(matrixStats)\
+library(cluster)\
+library(mclustcomp)\
+library(edgeR)\
+library(limma)\
+library(ggrepel)\
+library(tidyverse)\
+library(DT)\
+library(msigdb)\
+library(GSEABase)\
+library(SpatialDecon)\
+library(knitr)\
+library(umap)\
+library(Rtsne)\
+library(ExperimentHub)\
+library(SpatialOmicsSperlay) #devtools::install_github("Nanostring-Biostats/SpatialOmicsSperlay", build_vignettes = F, ref = "dev")\
+library(tiff)\
+library(magick)\
+require("Seurat.utils")\
+library(pheatmap)\
+library(knitr)\
+library(RBioFormats)\
+library(rlang)\
+library(NanoStringNCTools)\
+library(GeomxTools)\
+library(GeoMxWorkflows)\
+library(scater)\
+library(RColorBrewer)\
+library(grDevices)\
+#library(vissE)\
+library(igraph)\
+library(pheatmap)\
+library(scales) # for percent\
+library(reshape2)  # for melt\
+library(cowplot)   # for plot_grid\
+library(ggplot2)\
+library(ggalluvial)\
+library(edgeR)\
+library(limma)\
+library(ggrepel)\
+library(tidyverse)\
+library(EnhancedVolcano)\
+\
+\
+\
+\
+\
+###########################################################################################################################################################\
+#\
+#  Analysis using Nanostring's GeomxTools package\
+# \
+# \
+\
+\{\
+\
+\
+\
+#paths to DCC files, PKC (probe module info) file, and sample annotation spreadsheet \
+DCCFiles <- dir(file.path("/opt/data/GeoMx/Dan_Spleen/DCCs/"), pattern = ".dcc$", full.names = TRUE, recursive = FALSE)\
+PKCFiles <- dir(file.path("/opt/data/GeoMx/Dan_Spleen"), pattern = ".pkc$", full.names = TRUE, recursive = TRUE)\
+SampleAnnotationFile <- dir(file.path("/opt/data/GeoMx/Dan_Spleen"), pattern = "GeoMx_SpleenAnnotations.xlsx", full.names = TRUE, recursive = TRUE)\
+#SampleAnnotationFile <- dir(file.path("/data/GeoMx/Human_Spary_gridded"), pattern = "v2.xlsx$", full.names = TRUE, recursive = FALSE)\
+\
+\
+#creates the GeoMx data object\
+dataobj <- readNanoStringGeoMxSet(dccFiles = DCCFiles,\
+                                  pkcFiles = PKCFiles,\
+                                  phenoDataFile = SampleAnnotationFile,\
+                                  phenoDataSheet = "Template",\
+                                  phenoDataDccColName = "SampleID",\
+                                  protocolDataColNames = c("Aoi", "Roi"),\
+                                  experimentDataColNames = c("Panel"))\
+\
+\
+head(dataobj@featureData@data)\
+dataobj@featureData@data[dataobj@featureData@data$Negative==TRUE,]\
+head(dataobj@featureData)\
+fData(dataobj)\
+dataobj@featureData@data$TargetName\
+table(dataobj@phenoData@data$Segment)#; table(dataobj@phenoData@data$SlideName); table(dataobj@phenoData@data$NTC)\
+#Old Young \
+#95    95 \
+#\
+#SN_0169_Slide1 SN_0169_Slide2 SN_0179_Slide1 SN_0179_Slide2 \
+#45             50             44             51 \
+#\
+#225 235 240 255 \
+#50  51  44  45 \
+\
+#modules <- gsub(".pkc", "", PKCFiles)\
+modules <- 'Mm_R_NGS_WTA_v1.0'\
+kable(data.frame(PKCs = PKCFiles, modules = modules))\
+\
+# select the annotations we want to show, use `` to surround column names with spaces or special symbols\
+count_mat <- dplyr::count(pData(dataobj), `Slide Name`, Segment)\
+count_mat\
+\
+\
+dataobj <- shiftCountsOne(dataobj, useDALogic = TRUE)\
+# Default QC cutoffs are commented in () adjacent to the respective parameters\
+# study-specific values were selected after visualizing the QC results in more detail below\
+QC_params <-\
+  list(minSegmentReads = 1000, # Minimum number of reads (1000)\
+       percentTrimmed = 80,    # Minimum % of reads trimmed (80%)\
+       percentStitched = 80,   # Minimum % of reads stitched (80%)\
+       percentAligned = 75,    # Minimum % of reads aligned (80%)\
+       percentSaturation = 50, # Minimum sequencing saturation (50%)\
+       minNegativeCount = 1,   # Minimum negative control counts (10)\
+       maxNTCCount = 10000,     # Maximum counts observed in NTC well (1000)\
+       minNuclei = 1,         # Minimum # of nuclei estimated (100)\
+       minArea = 1000)         # Minimum segment area (5000)\
+\
+\
+dataobj <-  setSegmentQCFlags(dataobj, qcCutoffs = QC_params)        \
+\
+# Collate QC Results\
+QCResults <- protocolData(dataobj)[["QCFlags"]]\
+flag_columns <- colnames(QCResults)\
+QC_Summary <- data.frame(Pass = colSums(!QCResults[, flag_columns]), Warning = colSums(QCResults[, flag_columns]))\
+QCResults$QCStatus <- apply(QCResults, 1L, function(x) \{ ifelse(sum(x) == 0L, "PASS", "WARNING")\})\
+QC_Summary["TOTAL FLAGS", ] <- c(sum(QCResults[, "QCStatus"] == "PASS"), sum(QCResults[, "QCStatus"] == "WARNING"))\
+\
+\
+col_by <- "Segment"\
+\
+# Graphical summaries of QC statistics plot function\
+QC_histogram <- function(assay_data = NULL,annotation = NULL,fill_by = NULL,thr = NULL,scale_trans = NULL) \{\
+  \
+  plt <- ggplot(assay_data, aes_string(x = paste0("unlist(`", annotation, "`)"), fill = fill_by)) +\
+                geom_histogram(bins = 50) +\
+                geom_vline(xintercept = thr, lty = "dashed", color = "black") +\
+                theme_bw() + guides(fill = "none") +\
+                facet_wrap(as.formula(paste("~", fill_by)), nrow = 4) +\
+                labs(x = annotation, y = "Segments, #", title = annotation)\
+  \
+  if(!is.null(scale_trans)) \{plt <- plt + scale_x_continuous(trans = scale_trans)\}\
+  plt\
+  \
+\}\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/QC_plots.pdf")\
+((QC_histogram(sData(dataobj), "Trimmed (%)", col_by, 80)) | (QC_histogram(sData(dataobj), "Stitched (%)", col_by, 80)) | (QC_histogram(sData(dataobj), "Aligned (%)", col_by, 75))) /\
+((QC_histogram(sData(dataobj), "Area", col_by, 1000, scale_trans = "log10")) | (QC_histogram(sData(dataobj), "Saturated (%)", col_by, 50) + labs(title = "Seq. Saturation (%)", x = "Sequencing Saturation (%)")) | (QC_histogram(sData(dataobj), "Nuclei", col_by, 20)))\
+dev.off()\
+\
+\
+# calculate the negative geometric means for each module\
+negativeGeoMeans <- esBy(negativeControlSubset(dataobj), GROUP = "Module", FUN = function(x) \{ assayDataApply(x, MARGIN = 2, FUN = ngeoMean, elt = "exprs") \}) \
+protocolData(dataobj)[["NegGeoMean"]] <- negativeGeoMeans\
+\
+# explicitly copy the Negative geoMeans from sData to pData\
+negCols <- paste0("NegGeoMean_", modules)\
+#negCols <- "NegGeoMean_"\
+pData(dataobj)[, negCols] <- sData(dataobj)[["NegGeoMean"]]\
+for(ann in negCols) \{\
+  plt <- QC_histogram(pData(dataobj), ann, col_by, 2, scale_trans = "log10")\
+  print(plt)\
+\}\
+\
+# detatch neg_geomean columns ahead of aggregateCounts call\
+pData(dataobj) <- pData(dataobj)[, !colnames(pData(dataobj)) %in% negCols]\
+\
+# show all NTC values, Freq = # of Segments with a given NTC count:\
+kable(table(NTC_Count = sData(dataobj)$Mm_R_NGS_WTA_v1.0),col.names = c("NTC Count", "# of Segments"))\
+dataobj2 <- dataobj[, QCResults$QCStatus == "PASS"]\
+# Subsetting our dataset has remSped samples which did not pass QC\
+dim(dataobj2)\
+\
+\
+# Check how many unique targets the object has\
+length(unique(featureData(dataobj2)[["TargetName"]]))\
+\
+\
+# collapse to targets\
+dataobj2 <- aggregateCounts(dataobj2)\
+dim(dataobj2)\
+#Features  Samples \
+#   19963       92 \
+\
+\
+# Define LOQ SD threshold and minimum value\
+cutoff <- 2\
+minLOQ <- 2\
+\
+# Calculate LOQ per module tested\
+LOQ <- data.frame(row.names = colnames(dataobj2))\
+for(module in modules) \{\
+  vars <- paste0(c("NegGeoMean_", "NegGeoSD_"),\
+                 module)\
+  if(all(vars[1:2] %in% colnames(pData(dataobj2)))) \{\
+    LOQ[, module] <-\
+      pmax(minLOQ,\
+           pData(dataobj2)[, vars[1]] * \
+             pData(dataobj2)[, vars[2]] ^ cutoff)\
+  \}\
+\}\
+pData(dataobj2)$LOQ <- LOQ\
+\
+\
+LOQ_Mat <- c()\
+for(module in modules) \{\
+  ind <- fData(dataobj2)$Module == module\
+  Mat_i <- t(esApply(dataobj2[ind, ], MARGIN = 1,\
+                     FUN = function(x) \{\
+                       x > LOQ[, module]\
+                     \}))\
+  LOQ_Mat <- rbind(LOQ_Mat, Mat_i)\
+\}\
+# ensure ordering since this is stored outside of the geomxSet\
+LOQ_Mat <- LOQ_Mat[fData(dataobj2)$TargetName, ]\
+\
+\
+# Save detection rate information to pheno data\
+pData(dataobj2)$GenesDetected <- colSums(LOQ_Mat, na.rm = TRUE)\
+pData(dataobj2)$GeneDetectionRate <- pData(dataobj2)$GenesDetected / nrow(dataobj2)\
+\
+# Determine detection thresholds: 1%, 5%, 10%, 15%, >15%\
+pData(dataobj2)$DetectionThreshold <- \
+  cut(pData(dataobj2)$GeneDetectionRate,\
+      breaks = c(0, 0.01, 0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 1),\
+      labels = c("<1%", "1-5%", "5-10%", "10-15%","15-25%","25-50%","50-75%",">75%"))#, ">15%"))\
+\
+# Calculate detection rate:\
+LOQ_Mat <- LOQ_Mat[, colnames(dataobj2)]\
+fData(dataobj2)$DetectedSegments <- rowSums(LOQ_Mat, na.rm = TRUE)\
+fData(dataobj2)$DetectionRate <- fData(dataobj2)$DetectedSegments / nrow(pData(dataobj2))\
+\
+\
+\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/GeneDetectionThreshold.pdf")\
+\
+# stacked bar plot of different cut points (1%, 5%, 10%, 15%)\
+ggplot(pData(dataobj2),\
+       aes(x = DetectionThreshold)) +\
+       geom_bar(aes(fill = `Slide Name`)) +\
+       geom_text(stat = "count", aes(label = ..count..), vjust = -0.5) +\
+       theme_bw() +\
+       scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +\
+       labs(x = "Gene Detection Rate",\
+            y = "Segments, #",\
+            fill = "Segment Type")\
+\
+\
+# Plot detection rate:\
+plot_detect <- data.frame(Freq = c(1, 5, 10, 20, 30, 50, 75, 90, 100))\
+plot_detect$Number <-\
+  unlist(lapply(c(0.01, 0.05, 0.1, 0.2, 0.3, 0.5,0.75,0.9,1),\
+                function(x) \{sum(fData(dataobj2)$DetectionRate >= x)\}))\
+plot_detect$Rate <- plot_detect$Number / nrow(fData(dataobj2))\
+rownames(plot_detect) <- plot_detect$Freq\
+\
+ggplot(plot_detect, aes(x = as.factor(Freq), y = Rate, fill = Rate)) +\
+  geom_bar(stat = "identity") +\
+  geom_text(aes(label = formatC(Number, format = "d", big.mark = ",")),\
+            vjust = 0, color = "black", size = 4) +\
+  scale_fill_gradient2(low = "orange2", mid = "lightblue",\
+                       high = "dodgerblue3", midpoint = 0.65,\
+                       limits = c(0,1),\
+                       labels = scales::percent) +\
+  theme_bw() +\
+  scale_y_continuous(labels = scales::percent, limits = c(0,1),\
+                     expand = expansion(mult = c(0, 0))) +\
+  labs(x = "% of Segments",\
+       y = "Genes Detected, % of Panel > LOQ")\
+\
+\
+dev.off()\
+\
+goi <- c("Cdkn1a","Cdkn2a","Mki67", "Trac", "Cd79a") #Trac is most upregulated T-cell gene, Cd79a is most upregulated B-cell gene\
+\
+goi_df <- data.frame(\
+  Gene = goi,\
+  Number = fData(dataobj2)[goi, "DetectedSegments"],\
+  DetectionRate = percent(fData(dataobj2)[goi, "DetectionRate"]))\
+\
+goi_df\
+\
+\
+\
+\
+\
+\
+\
+# Subset to target genes detected in at least 10% of the samples.\
+#   Also manually include the negative control probe, for downstream use\
+negativeProbefData <- subset(fData(dataobj2), CodeClass == "Negative")\
+neg_probes <- unique(negativeProbefData$TargetName)\
+dataobj3 <- dataobj2[fData(dataobj2)$DetectionRate >= 0.5 | fData(dataobj2)$TargetName %in% neg_probes, ]\
+dim(dataobj3)\
+#> Features  Samples \
+#>    10131      221\
+\
+# retain only detected genes of interest\
+goi <- goi[goi %in% rownames(dataobj3)]\
+goi\
+\
+\
+# Graph Q3 value vs negGeoMean of Negatives\
+ann_of_interest <- "Age_bin"\
+\
+Stat_data <- data.frame(row.names = colnames(dataobj3),\
+             Segment = colnames(dataobj3),\
+             Annotation = pData(dataobj3)[, ann_of_interest],\
+             Q3 = unlist(apply(dataobj3, 2, quantile, 0.75, na.rm = TRUE)),\
+             NegProbe = dataobj3[neg_probes, ])\
+\
+\
+Stat_data_m <- melt(Stat_data, measure.vars = c("Q3", "NegProbe.NegProbe.WTX"),variable.name = "Statistic", value.name = "Value")\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/Q3valueVsNegGeoMeanofNegatives.pdf")\
+plt1 <- ggplot(Stat_data_m,\
+               aes(x = Value, fill = Statistic)) +\
+  geom_histogram(bins = 40) + theme_bw() +\
+  scale_x_continuous(trans = "log2") +\
+  facet_wrap(~Annotation, nrow = 1) + \
+  scale_fill_brewer(palette = 3, type = "qual") +\
+  labs(x = "Counts", y = "Segments, #")\
+\
+plt2 <- ggplot(Stat_data,\
+               aes(x = NegProbe.NegProbe.WTX, y = Q3, color = Annotation)) +\
+  geom_abline(intercept = 0, slope = 1, lty = "dashed", color = "darkgray") +\
+  geom_point() + guides(color = "none") + theme_bw() +\
+  scale_x_continuous(trans = "log2") + \
+  scale_y_continuous(trans = "log2") +\
+  theme(aspect.ratio = 1) +\
+  labs(x = "Negative Probe GeoMean, Counts", y = "Q3 Value, Counts")\
+\
+plt3 <- ggplot(Stat_data,\
+               aes(x = NegProbe.NegProbe.WTX, y = Q3 / NegProbe.NegProbe.WTX, color = Annotation)) +\
+  geom_hline(yintercept = 1, lty = "dashed", color = "darkgray") +\
+  geom_point() + theme_bw() +\
+  scale_x_continuous(trans = "log2") + \
+  scale_y_continuous(trans = "log2") +\
+  theme(aspect.ratio = 1) +\
+  labs(x = "Negative Probe GeoMean, Counts", y = "Q3/NegProbe Value, Counts")\
+\
+btm_row <- plot_grid(plt2, plt3, nrow = 1, labels = c("B", ""),rel_widths = c(0.43,0.57))\
+plot_grid(plt1, btm_row, ncol = 1, labels = c("A", ""))\
+\
+dev.off()\
+\
+\
+# Q3 norm (75th percentile) for WTA/CTA  with or without custom spike-ins\
+dataobj3 <- NanoStringNCTools::normalize(dataobj3, norm_method = "quant", desiredQuantile = .75, toElt = "q_norm")\
+\
+# Background normalization for WTA/CTA without custom spike-in\
+dataobj3 <- NanoStringNCTools::normalize(dataobj3 , norm_method = "neg", fromElt = "exprs", toElt = "neg_norm")\
+\
+data_mat <- as.data.frame(dataobj3@assayData$exprs)\
+\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/NormalizationPlots.pdf")\
+par(mfrow = c(1,1))\
+boxplot(data_mat[,1:92],\
+        col = "#9EDAE5", main = "Raw Counts",\
+        log = "y", names = 1:92, xlab = "Segment",\
+        ylab = "Counts, Raw")\
+\
+boxplot(assayDataElement(dataobj3[,1:92], elt = "q_norm"),\
+        col = "#2CA02C", main = "Q3 Norm Counts",\
+        log = "y", names = 1:92, xlab = "Segment",\
+        ylab = "Counts, Q3 Normalized")\
+\
+boxplot(assayDataElement(dataobj3[,1:92], elt = "neg_norm"),\
+        col = "#FF7F0E", main = "Neg Norm Counts",\
+        log = "y", names = 1:92, xlab = "Segment",\
+        ylab = "Counts, Neg. Normalized")\
+\
+dev.off()\
+\
+\
+library(umap)\
+library(Rtsne)\
+\
+# update defaults for umap to contain a stable random_state (seed)\
+custom_umap <- umap::umap.defaults\
+custom_umap$random_state <- 42\
+# run UMAP\
+umap_out <- umap(t(log2(assayDataElement(dataobj3 , elt = "q_norm"))), config = custom_umap)\
+\
+pData(dataobj3)[, c("UMAP1", "UMAP2")] <- umap_out$layout[, c(1,2)]\
+#ggplot(pData(dataobj3),aes(x = UMAP1, y = UMAP2, color = region, shape = class)) + geom_point(size = 3) + theme_bw()\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/UMAP.pdf")\
+par(mfrow = c(1,1))\
+ggplot(pData(dataobj3),aes(x = UMAP1, y = UMAP2, color = `Slide Name`)) + geom_point(size = 3) + theme_bw()\
+ggplot(pData(dataobj3),aes(x = UMAP1, y = UMAP2, color = Celltype)) + geom_point(size = 3) + theme_bw()\
+ggplot(pData(dataobj3),aes(x = UMAP1, y = UMAP2, color = Age_bin)) + geom_point(size = 3) + theme_bw()\
+ggplot(pData(dataobj3),aes(x = UMAP1, y = UMAP2, color = Sex)) + geom_point(size = 3) + theme_bw()\
+dev.off()\
+\
+\
+#CHECK THESE IN PLOT - should be constant given seed abSpe but make sure. Comparisons depend on these annotations.\
+#pData(dataobj3)$cluster <- ''\
+#pData(dataobj3)$cluster[pData(dataobj3)$UMAP1 < 0] <- 'Old'\
+#pData(dataobj3)$cluster[pData(dataobj3)$UMAP2 < -4] <- 'YoungMain'\
+#pData(dataobj3)$cluster[pData(dataobj3)$UMAP1 > -4] <- 'YoungMixed'\
+#pData(dataobj3)$cluster\
+\
+\
+\
+# create a log2 transform of the data for analysis\
+assayDataElement(object = dataobj3, elt = "log_q") <- assayDataApply(dataobj3, 2, FUN = log, base = 2, elt = "q_norm")\
+\
+# create CV function\
+calc_CV <- function(x) \{sd(x) / mean(x)\}\
+CV_dat <- assayDataApply(dataobj3,\
+                         elt = "log_q", MARGIN = 1, calc_CV)\
+# show the highest CD genes and their CV values\
+sort(CV_dat, decreasing = TRUE)[1:5]\
+#ZBTB32      IGKC    HSPA1B     MYH11    CLDN24 \
+#0.3453709 0.3428395 0.3264615 0.3166566 0.3129643 \
+\
+# Identify genes in the top 3rd of the CV values\
+GOI <- names(CV_dat)[CV_dat > quantile(CV_dat, 0.99)]\
+#or\
+goi\
+pheatmap(assayDataElement(dataobj3[GOI], elt = "log_q"),\
+         scale = "row", \
+         show_rownames = FALSE, show_colnames = FALSE,\
+         border_color = NA,\
+         clustering_method = "average",\
+         clustering_distance_rows = "correlation",\
+         clustering_distance_cols = "correlation",\
+         cluster_rows = F,\
+         cluster_cols = F,\
+         breaks = seq(-3, 3, 0.05),\
+         color = colorRampPalette(c("purple3", "black", "yellow2"))(120),\
+         annotation_col = \
+           pData(dataobj3)[, c("Age", "SlideName")])#, "segment", "region")])\
+           #pData(dataobj3)[, c("cluster", "Age", "SlideName")])#, "segment", "region")])\
+\
+\
+pData(dataobj3)$testRegion <- factor(pData(dataobj3)$Age, c("Old", "Young"))\
+pData(dataobj3)[["Slide"]] <- factor(pData(dataobj3)[["SlideName"]])\
+assayDataElement(object = dataobj3, elt = "log_q") <- assayDataApply(dataobj3, 2, FUN = log, base = 2, elt = "q_norm")\
+\
+\
+\
+\
+# convert test variables to factors - by SlideName\
+\
+\{\
+pData(dataobj3)$testClass <- factor(pData(dataobj3)$SlideName, c("SN_0169_Slide1", "SN_0169_Slide2", "SN_0179_Slide1", "SN_0179_Slide2"))\
+\
+# run LMM:\
+# formula follows conventions defined by the lme4 package\
+resultsSlideName <- c()\
+#for(region in c("glomerulus", "tubule")) \{\
+#ind <- pData(dataobj3)$region == region\
+mixedOutmc <-mixedModelDE(dataobj3,\
+                          elt = "log_q",\
+                          modelFormula = ~ testClass + (1 | SlideName),\
+                          groupVar = "testClass",\
+                          nCores = parallel::detectCores(),\
+                          multiCore = T)\
+\
+# format results as data.frame\
+r_test <- do.call(rbind, mixedOutmc["lsmeans", ])\
+tests <- rownames(r_test)\
+r_test <- as.data.frame(r_test)\
+r_test$Contrast <- tests\
+\
+# use lapply in case you have multiple levels of your test factor to\
+# correctly associate gene name with it's row in the results table\
+r_test$Gene <- \
+  unlist(lapply(colnames(mixedOutmc),\
+                rep, nrow(mixedOutmc["lsmeans", ][[1]])))\
+#r_test$Subset <- region\
+r_test$FDR <- p.adjust(r_test$"Pr(>|t|)", method = "fdr")\
+r_test <- r_test[, c("Gene", "Contrast", "Estimate", "Pr(>|t|)", "FDR")]\
+resultsSlideName <- rbind(resultsSlideName, r_test)\
+#\}\
+\
+\
+kable(subset(resultsSlideName, Gene %in% goi), digits = 3,\
+      caption = "DE results for Genes of Interest",\
+      align = "lc", row.names = FALSE)\
+\
+\
+\
+ # # # # # # # ## # # # # # # ## # # # # # # ## # # # # # # ## # # # # # # ## # # # # # # #\
+#   change results2 to resultsSlideName\
+\
+library(ggrepel) \
+# Categorize Results based on P-value & FDR for plotting\
+results2$Color <- "NS or FC < 0.5"\
+results2$Color[results2$`Pr(>|t|)` < 0.05] <- "P < 0.05"\
+results2$Color[results2$FDR < 0.05] <- "FDR < 0.05"\
+results2$Color[results2$FDR < 0.001] <- "FDR < 0.001"\
+results2$Color[abs(results2$Estimate) < 0.5] <- "NS or FC < 0.5"\
+results2$Color <- factor(results2$Color,\
+                         levels = c("NS or FC < 0.5", "P < 0.05",\
+                                    "FDR < 0.05", "FDR < 0.001"))\
+\
+# pick top genes for either side of volcano to label\
+# order genes for convenience:\
+results2$invert_P <- (-log10(results2$`Pr(>|t|)`)) * sign(results2$Estimate)\
+top_g <- c()\
+#for(cond in c("DKD", "normal")) \{\
+#  ind <- results2$Subset == cond\
+top_g <- c(top_g, results2[,'Gene'][order(results2[,'invert_P'], decreasing = TRUE)[1:15]],\
+           results2[,'Gene'][order(results2[,'invert_P'], decreasing = FALSE)[1:15]])\
+#\}\
+top_g <- unique(top_g)\
+results2 <- results2[, -1*ncol(results2)] # remSpe invert_P from matrix\
+\
+# Graph results\
+ggplot(results2,\
+       aes(x = Estimate, y = -log10(`Pr(>|t|)`),\
+           color = Color, label = Gene)) +\
+  xlim(-1.5, 2.5) +\
+  geom_vline(xintercept = c(0.5, -0.5), lty = "dashed") +\
+  geom_hline(yintercept = -log10(0.05), lty = "dashed") +\
+  geom_point() +\
+  labs(x = "    Enriched in 50yo <- log2(FC) -> Enriched in 67yo",\
+       y = "Significance, -log10(P)",\
+       color = "Significance") +\
+  scale_color_manual(values = c(`FDR < 0.001` = "dodgerblue",\
+                                `FDR < 0.05` = "lightblue",\
+                                `P < 0.05` = "orange2",\
+                                `NS or FC < 0.5` = "gray"),\
+                     guide = guide_legend(Sperride.aes = list(size = 4))) +\
+  scale_y_continuous(expand = expansion(mult = c(0,0.05))) +\
+  geom_text_repel(data = subset(results2, Gene %in% top_g & FDR < 0.001),\
+                  size = 3, point.padding = 0.15, color = "black",\
+                  min.segment.length = 0, nudge_y = 2, box.padding = .2, lwd = 2,\
+                  max.Sperlaps = 10) +\
+  theme_bw(base_size = 16) +\
+  theme(legend.position = "bottom")# +\
+#facet_wrap(~Subset, scales = "free_y")\
+\}\
+\
+\
+\
+# convert test variables to factors - by age\
+\
+\{\
+  pData(dataobj3)$testClass <- factor(pData(dataobj3)$Age, c("Old", "Young"))\
+  \
+  # run LMM:\
+  # formula follows conventions defined by the lme4 package\
+  resultsAge <- c()\
+  #for(region in c("glomerulus", "tubule")) \{\
+  #ind <- pData(dataobj3)$region == region\
+  mixedOutmc <-mixedModelDE(dataobj3,\
+                 elt = "log_q",\
+                 modelFormula = ~ testClass + (1 | SlideName),\
+                 groupVar = "testClass",\
+                 nCores = parallel::detectCores(),\
+                 multiCore = T)\
+  \
+  # format results as data.frame\
+  r_test <- do.call(rbind, mixedOutmc["lsmeans", ])\
+  tests <- rownames(r_test)\
+  r_test <- as.data.frame(r_test)\
+  r_test$Contrast <- tests\
+  \
+  # use lapply in case you have multiple levels of your test factor to\
+  # correctly associate gene name with it's row in the results table\
+  r_test$Gene <- unlist(lapply(colnames(mixedOutmc), rep, nrow(mixedOutmc["lsmeans", ][[1]])))\
+  r_test$FDR <- p.adjust(r_test$"Pr(>|t|)", method = "fdr")\
+  r_test <- r_test[, c("Gene", "Contrast", "Estimate", "Pr(>|t|)", "FDR")]\
+  resultsAge <- rbind(resultsAge, r_test)\
+  #\}\
+  \
+    \
+  kable(subset(resultsAge, Gene %in% goi), digits = 3, caption = "DE results for Genes of Interest", align = "lc", row.names = FALSE)\
+  \
+  \
+  \
+  \
+  # Categorize Results based on P-value & FDR for plotting\
+  resultsAge$Color <- "NS or FC < 0.5"\
+  resultsAge$Color[resultsAge$`Pr(>|t|)` < 0.05] <- "P < 0.05"\
+  resultsAge$Color[resultsAge$FDR < 0.05] <- "FDR < 0.05"\
+  resultsAge$Color[resultsAge$FDR < 0.001] <- "FDR < 0.001"\
+  resultsAge$Color[abs(resultsAge$Estimate) < 0.5] <- "NS or FC < 0.5"\
+  resultsAge$Color <- factor(resultsAge$Color, levels = c("NS or FC < 0.5", "P < 0.05", "FDR < 0.05", "FDR < 0.001"))\
+  \
+  # pick top genes for either side of volcano to label, order genes for convenience:\
+  resultsAge$invert_P <- (-log10(resultsAge$`Pr(>|t|)`)) * sign(resultsAge$Estimate)\
+  top_g <- c()\
+  #for(cond in c("DKD", "normal")) \{\
+  #  ind <- resultsAge$Subset == cond\
+  top_g <- c(top_g, resultsAge[,'Gene'][order(resultsAge[,'invert_P'], decreasing = TRUE)[1:15]],\
+             resultsAge[,'Gene'][order(resultsAge[,'invert_P'], decreasing = FALSE)[1:15]])\
+  #\}\
+  top_g <- unique(top_g)\
+  resultsAge <- resultsAge[, -1*ncol(resultsAge)] # remSpe invert_P from matrix\
+  \
+  # Graph results\
+  ggplot(resultsAge,\
+         aes(x = Estimate, y = -log10(`Pr(>|t|)`), color = Color, label = Gene)) +\
+    xlim(-1.5, 2.5) +\
+    #geom_vline(xintercept = c(0.5, -0.5), lty = "dashed") +\
+    geom_hline(yintercept = -log10(0.05), lty = "dashed") +\
+    geom_point() +\
+    labs(x = "Enriched in 50yo <- log2(FC) -> Enriched in 67yo", y = "Significance, -log10(P)", color = "Significance") +\
+    scale_color_manual(values = c(`FDR < 0.001` = "dodgerblue", `FDR < 0.05` = "lightblue", `P < 0.05` = "orange2", `NS or FC < 0.5` = "gray"),guide = guide_legend(Sperride.aes = list(size = 4))) +\
+    scale_y_continuous(expand = expansion(mult = c(0,0.05))) +\
+    geom_text_repel(data = subset(resultsAge, Gene %in% top_g & FDR < 0.001),\
+                    size = 3, point.padding = 0.15, color = "black",\
+                    min.segment.length = 0, nudge_y = 2, box.padding = .5, lwd = 2,\
+                    max.Sperlaps = 10) +\
+    theme_bw(base_size = 16) +\
+    theme(legend.position = "bottom")# +\
+    \
+\}\
+\
+\
+\
+\
+\
+##########################################################################################\
+#\
+#       SpatialOmicsSperlay\
+#\
+#\
+\
+\
+\
+SperlaySampleAnnotationFile <- dir(file.path("/data/GeoMx/Human_Spary_gridded"), pattern = "readSpatialSperlay.xlsx$", full.names = TRUE, recursive = FALSE)\
+\
+#TIFF_input <- readTIFF("/data/GeoMx/Human_Spary_gridded/SN_0169_Slide1.ome.tiff") \
+#omeImage <- read.image(file = ometiff, resolution = res, read.metadata = FALSE, normalize = FALSE)\
+#xmlExtraction <- xmlExtraction("/data/GeoMx/Human_Spary_gridded/SN_0169_Slide1.ome.tiff")\
+#Sperlay <- parseSperlayAttrs(omexml = xmlExtraction, annots = SperlaySampleAnnotationFile, labworksheet = TRUE)\
+\
+options(java.parameters = c("-XX:+UseConcMarkSweepGC", "-Xmx64g"))\
+gc(verbose = T)\
+\
+\
+#SparyGridded <- addImageOmeTiff(Sperlay = SparyGridded, ometiff = "/data/GeoMx/Human_Spary_gridded/SN_0169_Slide1.ome.tiff", res = 4)\
+SparyGridded2 <- readSpatialSperlay(ometiff = "/data/GeoMx/Human_Spary_gridded/SN_0169_Slide1.ome.tiff", annots = SperlaySampleAnnotationFile, \
+                              slideName = "SN_0169_Slide1", image = T, res = 4, saveFile = FALSE, outline = FALSE)\
+\
+#SparyGridded2 <- cropTissue(Sperlay = SparyGridded, buffer = 0.01)\
+#showImage(SparyGridded)\
+#head(sampNames(SparyGridded))\
+#slideName(SparyGridded)\
+#head(meta(Sperlay(SparyGridded)))\
+#head(coords(SparyGridded))\
+#dataobj3@protocolData@data$Roi; dataobj3@assayData$exprs; dataobj3@featureData@dimLabels \
+\
+dataobj4 <- dataobj3\
+dataobj4@assayData$log_q <- as.double(dataobj4@assayData$log_q) #ignore the error - it works\
+\
+SparyGridded2 <- addPlottingFactor(Sperlay = SparyGridded2, annots = dataobj3@assayData$log_q[rownames(dataobj3@assayData$log_q) %in% c("CDKN1A")], plottingFactor = "CDKN1A"); SparyGridded2@plottingFactors$CDKN1A <- as.double(SparyGridded2@plottingFactors$CDKN1A)\
+SparyGridded2 <- addPlottingFactor(Sperlay = SparyGridded2, annots = dataobj3@assayData$log_q[rownames(dataobj3@assayData$log_q) %in% c("DDX4")], plottingFactor = "DDX4"); SparyGridded2@plottingFactors$DDX4 <- as.double(SparyGridded2@plottingFactors$DDX4)\
+SparyGridded2 <- addPlottingFactor(Sperlay = SparyGridded2, annots = dataobj3@assayData$log_q[rownames(dataobj3@assayData$log_q) %in% c("DPPA3")], plottingFactor = "DPPA3"); SparyGridded2@plottingFactors$DPPA3 <- as.double(SparyGridded2@plottingFactors$DPPA3)\
+SparyGridded2 <- addPlottingFactor(Sperlay = SparyGridded2, annots = dataobj3@assayData$log_q[rownames(dataobj3@assayData$log_q) %in% c("VWF")], plottingFactor = "VWF"); SparyGridded2@plottingFactors$VWF <- as.double(SparyGridded2@plottingFactors$VWF)\
+SparyGridded2 <- addPlottingFactor(Sperlay = SparyGridded2, annots = dataobj3@assayData$log_q[rownames(dataobj3@assayData$log_q) %in% c("FOXL2")], plottingFactor = "FOXL2"); SparyGridded2@plottingFactors$FOXL2 <- as.double(SparyGridded2@plottingFactors$FOXL2)\
+SparyGridded2 <- addPlottingFactor(Sperlay = SparyGridded2, annots = dataobj3@assayData$log_q[rownames(dataobj3@assayData$log_q) %in% c("TAGLN")], plottingFactor = "TAGLN"); SparyGridded2@plottingFactors$TAGLN <- as.double(SparyGridded2@plottingFactors$TAGLN)\
+\
+#SparyGridded <- addPlottingFactor(Sperlay = SparyGridded, annots = dataobj3@protocolData@data$Roi, plottingFactor = "ROI Number")\
+#colnames(plotFactors(SparyGridded))\
+#SparyGridded@plottingFactors$MKI67\
+#plotSpatialSperlay(Sperlay = SparyGridded, hiRes = FALSE, legend = FALSE)\
+\
+ol_CDKN1A <- plotSpatialSperlay(Sperlay = SparyGridded2, colorBy = "CDKN1A", corner = "topcenter", scaleBarMicrons=1000, scaleBarFontSize = 3.5, scaleBarLineSize = 1, \
+                                textDistance = 100, scaleBarColor = "white") + viridis::scale_fill_viridis(discrete = F, option = "C") & theme(plot.margin = margin(0, 0, -10, 0, "cm"))\
+ol_DDX4 <- plotSpatialSperlay(Sperlay = SparyGridded2, colorBy = "DDX4", corner = "topcenter", scaleBarMicrons=1000, scaleBarFontSize = 3.5, scaleBarLineSize = 1, \
+                              textDistance = 100, scaleBarColor = "white") + viridis::scale_fill_viridis(discrete = F, option = "C") + theme(plot.margin = margin(0, 0, -10, 0, "cm"))\
+ol_DPPA3 <- plotSpatialSperlay(Sperlay = SparyGridded2, colorBy = "DPPA3", corner = "topcenter", scaleBarMicrons=1000, scaleBarFontSize = 3.5, scaleBarLineSize = 1, \
+                               textDistance = 100, scaleBarColor = "white") + viridis::scale_fill_viridis(discrete = F, option = "C") + theme(plot.margin = margin(0, 0, -10, 0, "cm"))\
+ol_VWF <- plotSpatialSperlay(Sperlay = SparyGridded2, colorBy = "VWF", corner = "topcenter", scaleBarMicrons=1000, scaleBarFontSize = 3.5, scaleBarLineSize = 1, \
+                             textDistance = 100, scaleBarColor = "white") + viridis::scale_fill_viridis(discrete = F, option = "C") + theme(plot.margin = margin(0, 0, -10, 0, "cm"))\
+ol_FOXL2 <- plotSpatialSperlay(Sperlay = SparyGridded2, colorBy = "FOXL2", corner = "topcenter", scaleBarMicrons=1000, scaleBarFontSize = 3.5, scaleBarLineSize = 1, \
+                               textDistance = 100, scaleBarColor = "white") + viridis::scale_fill_viridis(discrete = F, option = "C") + theme(plot.margin = margin(0, 0, -10, 0, "cm"))\
+ol_TAGLN <- plotSpatialSperlay(Sperlay = SparyGridded2, colorBy = "TAGLN", corner = "topcenter", scaleBarMicrons=1000, scaleBarFontSize = 3.5, scaleBarLineSize = 1, \
+                               textDistance = 100, scaleBarColor = "white") + viridis::scale_fill_viridis(discrete = F, option = "C") + theme(plot.margin = margin(0, 0, -10, 0, "cm"))\
+\
+#plot_grid(ol_CDKN1A, ol_DDX4, ol_DPPA3, ol_VWF, ol_FOXL2, ol_TAGLN, ncol = 3)\
+(ol_CDKN1A | ol_DDX4 | ol_DPPA3) /\
+(ol_VWF | ol_FOXL2 | ol_TAGLN)\
+\
+\
+\
+\
+\
+\
+##########################################################################################\
+#\
+#       Cellular deconvolution - GeoMx\
+#\
+\
+\
+\
+\
+bg = derive_GeoMx_background(norm = dataobj3@assayData$log_q, probepool = fData(dataobj3)$Module, negnames = c("NegProbe-WTX"))\
+\
+\
+#custom_mtx <- read.table("/data/GeoMx/Human_Spary_gridded/SparyCelltypeMarkers.tsv", header = T, sep = "\\t", row.names = 1, check.names=FALSE)\
+custom_mtx <- read.table("/data/GeoMx/Human_Spary_gridded/SparyCelltypeMarkers_Small.tsv", header = T, sep = "\\t", row.names = 1, check.names=FALSE)\
+\
+custom_mtx <- data.matrix(custom_mtx, rownames.force = T)\
+#row.names(custom_mtx) <- custom_mtx$Genes\
+#heatmap(sweep(custom_mtx, 1, apply(custom_mtx, 1, max), "/"), labRow = NA, margins = c(10, 5), cexCol = 0.7)\
+\
+decon <- runspatialdecon(object = dataobj3, norm_elt = "log_q", raw_elt = "exprs", X = custom_mtx, align_genes = T)\
+\
+names(decon@assayData)\
+#heatmap(t(decon$beta), cexCol = 0.5, cexRow = 0.7, margins = c(10,7), cluster_rows = F)\
+pheatmap(decon$beta, scale = "column", cluster_rows = T, cluster_cols = T, show_rownames = F,  treeheight_row = 0, angle_col = "0") #, cexCol = 0.5, cexRow = 0.7, margins = c(10,7))\
+#(pheatmap(decon$beta, scale = "column", cluster_rows = T, cluster_cols = T, show_rownames = F,  treeheight_row = 0, angle_col = "0"))\
+  \
+  \
+temp = replace(decon@phenoData@data$prop_of_nontumor, is.na(decon@phenoData@data$prop_of_nontumor), 0)\
+o = hclust(dist(temp))$order\
+rownames(decon@phenoData@data$prop_of_nontumor) <- gsub("DSP-10016600211|.dcc|A-|B-|", "", rownames(decon@phenoData@data$prop_of_nontumor))\
+#rownames(decon@phenoData@data$prop_of_nontumor) <- gsub("DSP-10016600211|.dcc|-A-|-B-|", "", rownames(decon@phenoData@data$prop_of_nontumor))\
+\
+\
+par(mfrow=c(1,2))\
+#TIL_barplot(t(decon@phenoData@data$prop_of_nontumor)[, o], draw_legend = TRUE, cex.names = 0.75)\
+TIL_barplot(t(decon@phenoData@data$prop_of_nontumor), draw_legend = TRUE, cex.names = 0.75)\
+\
+\
+dataobj3 <- readRDS(file = "/data/GeoMx/Human_Spary_gridded/dataobj3_obj_12-14-23.RDS.gz")\
+decon <- readRDS(file = "/data/GeoMx/Human_Spary_gridded/decon_obj_12-14-23.RDS.gz")\
+\
+require("Seurat.utils")\
+Seurat.utils:::.saveRDS.compress.in.BG(decon, fname = "/data/GeoMx/Human_Spary_gridded/decon_obj_12-14-23.RDS.gz")\
+Seurat.utils:::.saveRDS.compress.in.BG(dataobj3, fname = "/data/GeoMx/Human_Spary_gridded/dataobj3_obj_12-14-23.RDS.gz")\
+Seurat.utils:::.saveRDS.compress.in.BG(SparyGridded, fname = "/data/GeoMx/Human_Spary_gridded/SparyGridded_obj_12-14-23.RDS.gz")\
+\
+\
+\
+\
+\}\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+###########################################################################################################################################################\
+#\
+#  From here down, analysis is done using the standR package\
+#\
+# \
+\
+\
+#data_mat <- as.data.frame(dataobj3@assayData$exprs)\
+#names(data_mat) <- gsub(x = names(data_mat), pattern = ".dcc", replacement = "")\
+#data_mat$TargetName <- rownames(data_mat)\
+#write.table(data_mat, file = "/data/GeoMx/Human_Spary_gridded/data_mat.tsv", sep = "\\t", quote = F, row.names = F)\
+\
+#standR_SampleAnnotationFile <- as.data.frame(read_tsv(file = "/opt/data/GeoMx/Dan_Spleen/Spleen_GeoMx_annotations.tsv"), row.names = F)\
+#standR_SampleAnnotationFile <- as.data.frame(read_tsv(file = "/opt/data/GeoMx/Dan_Spleen/Spleen_GeoMx_annotations_v2.tsv"), row.names = F)\
+standR_SampleAnnotationFile <- as.data.frame(read_tsv(file = "/opt/data/GeoMx/Dan_Spleen/Spleen_GeoMx_annotations_v3.tsv"), row.names = F)\
+\
+# Make sure to create this file using the output from the Nanostring analysis platform AFTER the bioprobeQC step - this is where the negative probes get parsed and added to the other probe counts\
+#data_mat <- as.data.frame(read_tsv(file = "/opt/data/GeoMx/Dan_Spleen/spleen_data_matrix.tsv"))\
+data_mat <- as.data.frame(read_tsv(file = "/opt/data/GeoMx/Dan_Spleen/spleen_data_matrix_v2.tsv"))\
+\
+Sp_spe1 <- readGeoMx(data_mat, standR_SampleAnnotationFile, featureAnnoFile = NA, rmNegProbe = T, NegProbeName = "NegProbe-WTX",\
+          colnames.as.rownames = c("TargetName", "SampleID", "TargetName"), \
+          coord.colnames = c("ROI Coordinate X", "ROI Coordinate Y"))\
+\
+\
+#plotSampleInfo(Sp_spe, column2plot = c("Slide Name","Age_bin"))\
+Sp_spe <- addPerROIQC(Sp_spe1, rm_genes = TRUE)\
+dim(Sp_spe)\
+#metadata(Sp_spe) |> names()\
+\
+## These are the data object's metadata column names\
+colnames(Sp_spe@colData)\
+#  [1] "concat_key"                                     "Slide Name"                                     "Scan Name"                                      "Panel"                                         \
+#  [5] "Roi"                                            "Segment"                                        "Aoi"                                            "Area"                                          \
+#  [9] "Nuclei"                                         "TMA_map"                                        "TMA_DSP"                                        "Age_months"                                    \
+# [13] "Age_bin"                                        "Age_bin_DSP"                                    "Sex"                                            "Celltype"                                      \
+# [17] "Origin"                                         "ROI Coordinate X"                               "ROI Coordinate Y"                               "Scan Date"                                     \
+# [21] "Scan Width"                                     "Scan Height"                                    "Scan Offset X"                                  "Scan Offset Y"                                 \
+# [25] "(v1.0) Mouse NGS Whole Transcriptome Atlas RNA" "sample_id"                                      "lib_size"                                       "countOfLowEprGene"                             \
+# [29] "percentOfLowEprGene"     \
+\
+\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/StandR_Plots_05092024.pdf")\
+\
+\
+\
+#plotGeneQC(Sp_spe, ordannots = "Slide Name", col = "Slide Name", point_size = 2)\
+plotROIQC(Sp_spe, x_threshold = 150, x_axis = "Area", y_axis = "lib_size", x_lab = "Area (square microns)", color = `Sex`)\
+plotROIQC(Sp_spe, x_threshold = 150, x_axis = "Area", y_axis = "lib_size", x_lab = "Area (square microns)", color = `Sex_Age_Celltype`)\
+\
+#(plotRLExpr(Sp_spe, ordannots = "Slide Name", assay = 2, color = `Slide Name`) + ggtitle("Relative log expression (RLE) by slide")) /\
+#(plotRLExpr(Sp_spe, ordannots = "Age_bin", assay = 2, color = Age_bin) + ggtitle("RLE by age"))\
+\
+\
+#drawPCA(Sp_spe, assay = 2, color = Age_bin)# + geom_text_repel(aes(label = TMA_map), nudge_x = 1, nudge_y = 1, max.Sperlaps = 20)\
+#drawPCA(Sp_spe, assay = 2, color = Age_months)# + geom_text(aes(label = TMA_map), nudge_x = 1, nudge_y = 1)\
+#drawPCA(Sp_spe, assay = 2, color = Celltype)# + geom_text(aes(label = TMA_map), nudge_x = 1, nudge_y = 1)\
+#drawPCA(Sp_spe, assay = 2, color = Sex)# + geom_text(aes(label = TMA_map), nudge_x = 1, nudge_y = 1)\
+\
+\
+#set.seed(42)\
+#Sp_spe <- scater::runPCA(Sp_spe)\
+#pca_results <- reducedDim(Sp_spe, "PCA")\
+\
+#Sp_spe <- scater::runUMAP(Sp_spe, dimred = "PCA")\
+#plotDR(Sp_spe, dimred = "UMAP", col = Age_bin)\
+\
+#drawPCA(Sp_spe, precomputed = pca_results, col = Origin) + ggtitle("PCA by lab origin of mouse cohort")\
+#drawPCA(Sp_spe, precomputed = pca_results, col = Age_bin) + ggtitle("PCA by age (young/old)")\
+#drawPCA(Sp_spe, precomputed = pca_results, col = Age_months) + ggtitle("PCA by age (# months old")\
+#drawPCA(Sp_spe, precomputed = pca_results, col = Celltype) + ggtitle("PCA by cell type")\
+#drawPCA(Sp_spe, precomputed = pca_results, col = Sex) + ggtitle("PCA by sex")\
+\
+#plotScreePCA(Sp_spe, precomputed = pca_results)\
+#plotPairPCA(Sp_spe, col = Origin, precomputed = pca_results, n_dimension = 4)\
+#plotPairPCA(Sp_spe, col = Age_bin, precomputed = pca_results, n_dimension = 4)\
+#plotPCAbiplot(Sp_spe, n_loadings = 10, precomputed = pca_results, col = Age_bin)\
+#standR::plotMDS(Sp_spe, assay = 2, color = Age)\
+\
+\
+#Sp_spe_tmm <- geomxNorm(Sp_spe, method = "TMM")\
+\
+#(plotRLExpr(Sp_spe, ordannots = "Slide Name", assay = 2, color = `Slide Name`) + ggtitle("Raw counts")) /\
+#(plotRLExpr(Sp_spe_tmm, assay = 2, color = `Slide Name`) + ggtitle("TMM"))\
+\
+dev.off()\
+\
+##\
+\
+\
+Sp_spe_tmm <- geomxNorm(Sp_spe, method = "TMM")\
+\
+set.seed(42)\
+Sp_spe_tmm <- scater::runPCA(Sp_spe_tmm)\
+pca_results_tmm <- reducedDim(Sp_spe_tmm, "PCA")\
+\
+#Correction method : RemSpe Unwanted Variation 4 (RUV4)\
+\
+Sp_spe_NGCs <- findNCGs(Sp_spe_tmm, batch_name = "Origin", top_n = 300) #top_n = 300 for results shared with Dan\
+metadata(Sp_spe_NGCs) |> names()\
+\
+#For RUV4 correction, the function requires 3 addition parameters other than the input object:\
+#  factors: the factor of interest, i.e. the biological variation to keep;\
+#  NCGs: the list of negative control genes detected using the function findNCGs;\
+#  k: the number of unwanted factors to use. Based on RUV\'92s documentation, it is uggest to use the smallest k possible where the observed technical variation is no longer observed.\
+\
+#pdf("/opt/data/GeoMx/Dan_Spleen/StandR_NCGs_sweepKparam.pdf")\
+#for(i in seq(1))\{\
+#  print(i)\
+#  spe_ruv <- geomxBatchCorrection(Sp_spe_NGCs, factors = "Origin", NCGs = metadata(Sp_spe_NGCs)$NCGs, k = i)\
+#  spe_ruv <- scater::calculatePCA(spe_ruv)\
+#  reducedDims(spe_ruv, "PCA")\
+#  print(plotPairPCA(spe_ruv, assay = 2, n_dimension = 4, color = Origin, title = paste0("k = ", i)))\
+#  print(plotPairPCA(spe_ruv, assay = 2, n_dimension = 4, color = Celltype, title = paste0("k = ", i)))\
+#  \
+#\}\
+#dev.off()\
+\
+#See plots above; use k=1, the lowest value for which the biplot (pc2-by-pc4) shows PCs that cleanly separate the data by celltype and correct the genotype/lab-origin effect.\
+set.seed(42)\
+spe_ruv <- geomxBatchCorrection(Sp_spe_tmm, factors = c("Age_bin","Celltype","Sex"), NCGs = metadata(Sp_spe_NGCs)$NCGs, k = 2)\
+spe_ruv <- scater::runPCA(spe_ruv)\
+pca_results_ruv <- reducedDim(spe_ruv, "PCA")\
+\
+\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/StandR_RUVCorrectedByOrigin_Plots.pdf")\
+\
+drawPCA(Sp_spe_tmm, precomputed = pca_results, col = Origin) + ggtitle("PCA by lab origin of mouse cohort, uncorrected")\
+#drawPCA(Sp_spe_NGCs, precomputed = pca_results, col = Age_bin) + ggtitle("PCA by age (young/old), uncorrected")\
+#drawPCA(Sp_spe_NGCs, precomputed = pca_results, col = Age_months) + ggtitle("PCA by age (# months old")\
+#drawPCA(Sp_spe_NGCs, precomputed = pca_results, col = Celltype) + ggtitle("PCA by cell type, uncorrected")\
+\
+drawPCA(spe_ruv, precomputed = pca_results_ruv, col = Origin) + ggtitle("PCA colored by origin, Limma corrected")+ theme(legend.position="bottom")\
+\
+drawPCA(spe_ruv, precomputed = pca_results_ruv, col = Sex_Age_Celltype) + ggtitle("PCA colored by Sex + Age + cell type, Limma corrected") +\
+  theme(legend.position="bottom", legend.title = element_text(size=5), legend.text = element_text(size=5))\
+\
+#drawPCA(spe_ruv, precomputed = pca_results_ruv, col = Age_Celltype) + ggtitle("PCA colored by Age + cell type, Limma corrected")+ theme(legend.position="bottom")\
+#rawPCA(spe_ruv, precomputed = pca_results_ruv, col = Age_bin) + ggtitle("PCA colored by age, Limma corrected")+ theme(legend.position="bottom")\
+#drawPCA(spe_ruv, precomputed = pca_results_ruv, col = Celltype) + ggtitle("PCA colored by cell type, Limma corrected")+ theme(legend.position="bottom")\
+#drawPCA(spe_ruv, precomputed = pca_results_ruv, col = Sex) + ggtitle("PCA colored by sex, Limma corrected")+ theme(legend.position="bottom")\
+\
+\
+dev.off()\
+\
+spe_lrb <- geomxBatchCorrection(Sp_spe_tmm, batch = Sp_spe_tmm$Origin, method = "Limma", design = model.matrix(~Age_bin+Celltype+Sex, data = colData(Sp_spe_tmm)))\
+spe_lrb <- scater::runPCA(spe_lrb)\
+pca_spe_lrb <- reducedDim(spe_lrb, "PCA")\
+\
+\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/StandR_LimmaCorrectedByOrigin_Plots.pdf")\
+\
+plotROIQC(Sp_spe_tmm, x_threshold = 150, x_axis = "Area", y_axis = "lib_size", x_lab = "Area (square microns)", color = `Sex_Age_Celltype`)\
+\
+drawPCA(Sp_spe_tmm, precomputed = pca_results, col = Origin) + ggtitle("PCA by lab origin of mouse cohort, uncorrected")\
+drawPCA(Sp_spe_tmm, precomputed = pca_results, col = Age_bin) + ggtitle("PCA by age (young/old), uncorrected")\
+#drawPCA(Sp_spe_NGCs, precomputed = pca_results, col = Age_months) + ggtitle("PCA by age (# months old")\
+drawPCA(Sp_spe_tmm, precomputed = pca_results, col = Celltype) + ggtitle("PCA by cell type, uncorrected")\
+\
+drawPCA(spe_lrb, precomputed = pca_spe_lrb, col = Origin) + ggtitle("PCA colored by origin, Limma corrected")\
+drawPCA(spe_lrb, precomputed = pca_spe_lrb, col = Sex_Age_Celltype) + ggtitle("PCA colored by Sex + Age + cell type, Limma corrected") +\
+  theme(legend.position="bottom", legend.title = element_text(size=5), legend.text = element_text(size=5))\
+drawPCA(spe_lrb, precomputed = pca_spe_lrb, col = Age_Celltype) + ggtitle("PCA colored by Age + cell type, Limma corrected")\
+drawPCA(spe_lrb, precomputed = pca_spe_lrb, col = Age_bin) + ggtitle("PCA colored by age, Limma corrected")\
+drawPCA(spe_lrb, precomputed = pca_spe_lrb, col = Celltype) + ggtitle("PCA colored by cell type, Limma corrected")\
+drawPCA(spe_lrb, precomputed = pca_spe_lrb, col = Sex) + ggtitle("PCA colored by sex, Limma corrected")\
+\
+\
+#plotPairPCA(spe_lrb, precomputed = pca_spe_lrb, assay = 2, color = Origin, title = "PCA colored by origin, Limma corrected", n_dimension = 2) \
+#plotPairPCA(spe_lrb, precomputed = pca_spe_lrb, assay = 2, color = Age_Sex_Celltype, title = "PCA colored by Age_Sex_Celltype, Limma corrected", n_dimension = 2)\
+#plotPairPCA(spe_lrb, precomputed = pca_spe_lrb, assay = 2, color = Age_bin, title = "PCA colored by age, Limma corrected", n_dimension = 2)\
+#plotPairPCA(spe_lrb, precomputed = pca_spe_lrb, assay = 2, color = Sex, title = "PCA colored by sex, Limma corrected", n_dimension = 2)\
+#plotPairPCA(spe_lrb, precomputed = pca_spe_lrb, assay = 2, color = Celltype, title = "PCA colored by cell type, Limma corrected", n_dimension = 2)\
+\
+#str(spe_lrb)\
+#spe_list <- list(Sp_spe_NGCs, spe_lrb)#spe_ruv\
+#plotClusterEvalStats(spe_list = spe_list,bio_feature_name = "Origin",batch_feature_name = "Origin",data_names = c("Raw","Limma"))#"RUV4",\
+#(plotRLExpr(Sp_spe_NGCs, assay = 2, color = Origin) + ggtitle("RLE plot, original")) /\
+#(plotRLExpr(spe_lrb, assay = 2, color = Origin) + ggtitle("RLE plot, Limma corrected")) # Go with Limma remSpeBatch\
+dev.off()\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+###########################################################################################################################################################\
+#\
+#              Calculate DEGs using RUV correction matrices (ruv_W1 and _W2)\
+#\
+#\
+\
+colData(spe_ruv)\
+#spe_ruv$Age_Celltype_Sex <- paste0(spe_ruv$Age_Celltype,"_",spe_ruv$Sex)\
+spe_ruv$Age_Sex <- paste0(spe_ruv$Age_bin,"_",spe_ruv$Sex)\
+dge <- SE2DGEList(spe_ruv)\
+\
+\
+\
+\
+\
+\
+##\
+design_BcellsvsTcells_AllAges <- model.matrix(~0 + Celltype + ruv_W1 + ruv_W2, data = colData(spe_ruv))\
+design_OldvsYoung_BcellsTcells <- model.matrix(~0 + Age_Celltype + ruv_W1 + ruv_W2, data = colData(spe_ruv))\
+design_OldvsYoungAll <- model.matrix(~0 + Age_bin + ruv_W1 + ruv_W2, data = colData(spe_ruv))\
+\
+\
+\
+colnames(design_BcellsvsTcells_AllAges) <- gsub("Celltype","",colnames(design_BcellsvsTcells_AllAges)); colnames(design_BcellsvsTcells_AllAges)\
+colnames(design_OldvsYoung_BcellsTcells) <- gsub("Age_Celltype","",colnames(design_OldvsYoung_BcellsTcells)); colnames(design_OldvsYoung_BcellsTcells)\
+colnames(design_OldvsYoungFemale) <- gsub("Age_Sex","",colnames(design_OldvsYoungFemale)); colnames(design_OldvsYoungFemale)\
+\
+keep_BcellsvsTcells_AllAges <- filterByExpr(dge, design_BcellsvsTcells_AllAges); table(keep_BcellsvsTcells_AllAges)\
+keep_OldvsYoung_BcellsTcells <- filterByExpr(dge, design_OldvsYoung_BcellsTcells); table(keep_OldvsYoung_BcellsTcells)\
+keep_OldvsYoungAll <- filterByExpr(dge, design_OldvsYoungAll); table(keep_OldvsYoungAll)\
+keep_OldvsYoungFemale <- filterByExpr(dge, design_OldvsYoungFemale); table(keep_OldvsYoungFemale)\
+\
+#rownames(dge)[!keep]\
+#dge_all <- dge[keep, ]\
+dge_keep_BcellsvsTcells_AllAges <- dge[keep_BcellsvsTcells_AllAges,]; dge_keep_BcellsvsTcells_AllAges\
+dge_keep_OldvsYoung_BcellsTcells <- dge[keep_OldvsYoung_BcellsTcells,]; dge_keep_OldvsYoung_BcellsTcells\
+dge_keep_OldvsYoungFemale <- dge[keep_OldvsYoungFemale,]; dge_keep_OldvsYoungFemale\
+\
+estDisp_BvsT_AllAges <- estimateDisp(dge_keep_BcellsvsTcells_AllAges, design = design_BcellsvsTcells_AllAges, robust = TRUE)\
+estDisp_OldvsYoung_BcellsTcells <- estimateDisp(dge_keep_OldvsYoung_BcellsTcells, design = design_OldvsYoung_BcellsTcells, robust = TRUE)\
+estDisp_OldvsYoungFemale <- estimateDisp(dge_keep_OldvsYoungFemale, design = design_OldvsYoungFemale, robust = TRUE)\
+\
+\
+v_dge_design_BvsT_AllAges <- voom(estDisp_BvsT_AllAges, design_BcellsvsTcells_AllAges)\
+v_dge_design_OldvsYoung_BcellsTcells <- voom(estDisp_OldvsYoung_BcellsTcells, design_OldvsYoung_BcellsTcells)\
+v_dge_design_OldvsYoungAll <- voom(estDisp_OldvsYoungAll, design_OldvsYoungAll)\
+v_dge_design_OldvsYoungFemale <- voom(estDisp_OldvsYoungFemale, design_OldvsYoungFemale)\
+\
+\
+fit_dge_design_BvsT_AllAges <- lmFit(v_dge_design_BvsT_AllAges)\
+fit_dge_design_OldvsYoung_BcellsTcells <- lmFit(v_dge_design_OldvsYoung_BcellsTcells)\
+fit_dge_design_OldvsYoungFemale <- lmFit(v_dge_design_OldvsYoungFemale)\
+\
+\
+BcellsvsTcells_AllAges_contr.matrix <- makeContrasts(BvT = Bcells - Tcells, levels = colnames(design_BcellsvsTcells_AllAges))\
+OldvsYoung_Bcell_contr.matrix <- makeContrasts(OvY_Bcells = old_Bcells - young_Bcells, levels = colnames(design_OldvsYoung_BcellsTcells))\
+OldvsYoung_Tcell_contr.matrix <- makeContrasts(OvY_Tcells = old_Tcells - young_Tcells, levels = colnames(design_OldvsYoung_BcellsTcells))\
+OldvsYoung_Bcells_Female_contr.matrix <- makeContrasts(OvY_Bcells_Female = Female_old_Bcells - Female_young_Bcells, levels = colnames(design_OldvsYoung_BcellsTcells_MaleFemale))\
+OldvsYoung_Tcells_Female_contr.matrix <- makeContrasts(OvY_Tcells_Female = Female_old_Tcells - Female_young_Tcells, levels = colnames(design_OldvsYoung_BcellsTcells_MaleFemale))\
+OldvsYoungFemale_contr.matrix <- makeContrasts(OldvsYoungFemale = old_Female - young_Female, levels = colnames(design_OldvsYoungFemale))\
+\
+\
+fit_contrast_BcellsvsTcells_AllAges <- contrasts.fit(fit_dge_design_BvsT_AllAges, contrasts = BcellsvsTcells_AllAges_contr.matrix)\
+fit_contrast_OldvsYoung_Bcell <- contrasts.fit(fit_dge_design_OldvsYoung_BcellsTcells, contrasts = OldvsYoung_Bcell_contr.matrix)\
+fit_contrast_OldvsYoung_Tcell <- contrasts.fit(fit_dge_design_OldvsYoung_BcellsTcells, contrasts = OldvsYoung_Tcell_contr.matrix)\
+fit_contrast_OldvsYoung_Bcells_Female <- contrasts.fit(fit_dge_design_OldvsYoung_BcellsTcells_MaleFemale, contrasts = OldvsYoung_Bcells_Female_contr.matrix)\
+fit_contrast_OldvsYoung_Tcells_Female <- contrasts.fit(fit_dge_design_OldvsYoung_BcellsTcells_MaleFemale, contrasts = OldvsYoung_Tcells_Female_contr.matrix)\
+fit_contrast_OldvsYoungFemale <- contrasts.fit(fit_dge_design_OldvsYoungFemale, contrasts = OldvsYoungFemale_contr.matrix)\
+\
+\
+eBayes_BcellsvsTcells_AllAges <- eBayes(fit_contrast_BcellsvsTcells_AllAges, robust = T)\
+eBayes_OldvsYoung_Bcell <- eBayes(fit_contrast_OldvsYoung_Bcell, robust = T)\
+eBayes_OldvsYoung_Tcell <- eBayes(fit_contrast_OldvsYoung_Tcell, robust = T)\
+eBayes_OldvsYoung_Bcells_Female <- eBayes(fit_contrast_OldvsYoung_Bcells_Female, robust = T)\
+eBayes_OldvsYoung_Tcells_Female <- eBayes(fit_contrast_OldvsYoung_Tcells_Female, robust = T)\
+eBayes_OldvsYoungFemale <- eBayes(fit_contrast_OldvsYoungFemale, robust = T)\
+\
+\
+results_BcellsvsTcells_AllAges <- decideTests(eBayes_BcellsvsTcells_AllAges, p.value = 0.05)\
+results_OldvsYoung_Bcell <- decideTests(eBayes_OldvsYoung_Bcell, p.value = 0.05)\
+results_OldvsYoung_Tcell <- decideTests(eBayes_OldvsYoung_Tcell, p.value = 0.05)\
+results_OldvsYoung_Bcells_Female <- decideTests(eBayes_OldvsYoung_Bcells_Female, p.value = 0.05)\
+results_OldvsYoung_Tcells_Female <- decideTests(eBayes_OldvsYoung_Tcells_Female, p.value = 0.05)\
+results_OldvsYoungFemale <- decideTests(eBayes_OldvsYoungFemale, p.value = 0.05)\
+\
+\
+summary_BcellsvsTcells_AllAges <- summary(results_BcellsvsTcells_AllAges); summary_BcellsvsTcells_AllAges\
+summary_OldvsYoung_Bcell <- summary(results_OldvsYoung_Bcell); summary_OldvsYoung_Bcell\
+summary_OldvsYoung_Tcell <- summary(results_OldvsYoung_Tcell); summary_OldvsYoung_Tcell\
+summary_OldvsYoung_Bcells_Female <- summary(results_OldvsYoung_Bcells_Female); summary_OldvsYoung_Bcells_Female\
+summary_OldvsYoung_Tcells_Female <- summary(results_OldvsYoung_Tcells_Female); summary_OldvsYoung_Tcells_Female\
+summary_OldvsYoungFemale <- summary(results_OldvsYoungFemale); summary_OldvsYoungFemale\
+\
+#all_DEGs[,c("comparison","gene","avg_log2FC", "p_val_adj", "pct.1","pct.2","delta", "minor")]\
+DEres_BcellsvsTcells_AllAges <- topTable(eBayes_BcellsvsTcells_AllAges, coef = 1, sort.by = "logFC", n = Inf, p.value = 0.05); DEres_BcellsvsTcells_AllAges <- DEres_BcellsvsTcells_AllAges[order(DEres_BcellsvsTcells_AllAges$logFC, decreasing = c(T), method="radix"),]; DEres_BcellsvsTcells_AllAges$gene <- rownames(DEres_BcellsvsTcells_AllAges); DEres_BcellsvsTcells_AllAges$comparison <- "BcellsvsTcells_AllAges"; DEres_BcellsvsTcells_AllAges <- DEres_BcellsvsTcells_AllAges[,c("comparison","gene","logFC","adj.P.Val")]; head(DEres_BcellsvsTcells_AllAges)\
+DEres_OldvsYoung_Bcell <- topTable(eBayes_OldvsYoung_Bcell, coef = 1, sort.by = "logFC", n = Inf, p.value = 0.05); DEres_OldvsYoung_Bcell <- DEres_OldvsYoung_Bcell[order(DEres_OldvsYoung_Bcell$logFC, decreasing = c(T), method="radix"),]; DEres_OldvsYoung_Bcell$gene <- rownames(DEres_OldvsYoung_Bcell); DEres_OldvsYoung_Bcell$comparison <- "OldvsYoung_Bcell"; DEres_OldvsYoung_Bcell <- DEres_OldvsYoung_Bcell[,c("comparison","gene","logFC","adj.P.Val")]; head(DEres_OldvsYoung_Bcell)\
+DEres_OldvsYoung_Tcell <- topTable(eBayes_OldvsYoung_Tcell, coef = 1, sort.by = "logFC", n = Inf, p.value = 0.05); DEres_OldvsYoung_Tcell <- DEres_OldvsYoung_Tcell[order(DEres_OldvsYoung_Tcell$logFC, decreasing = c(T), method="radix"),]; DEres_OldvsYoung_Tcell$gene <- rownames(DEres_OldvsYoung_Tcell); DEres_OldvsYoung_Tcell$comparison <- "OldvsYoung_Tcell"; DEres_OldvsYoung_Tcell <- DEres_OldvsYoung_Tcell[,c("comparison","gene","logFC","adj.P.Val")]; head(DEres_OldvsYoung_Tcell)\
+DEres_OldvsYoung_Bcells_Female <- topTable(eBayes_OldvsYoung_Bcells_Female, coef = 1, sort.by = "logFC", n = Inf, p.value = 0.05); DEres_OldvsYoung_Bcells_Female <- DEres_OldvsYoung_Bcells_Female[order(DEres_OldvsYoung_Bcells_Female$logFC, decreasing = c(T), method="radix"),]; DEres_OldvsYoung_Bcells_Female$gene <- rownames(DEres_OldvsYoung_Bcells_Female); DEres_OldvsYoung_Bcells_Female$comparison <- "OldvsYoung_Bcells_Female"; DEres_OldvsYoung_Bcells_Female <- DEres_OldvsYoung_Bcells_Female[,c("comparison","gene","logFC","adj.P.Val")]; head(DEres_OldvsYoung_Bcells_Female)\
+DEres_OldvsYoung_Tcells_Female <- topTable(eBayes_OldvsYoung_Tcells_Female, coef = 1, sort.by = "logFC", n = Inf, p.value = 0.05); DEres_OldvsYoung_Tcells_Female <- DEres_OldvsYoung_Tcells_Female[order(DEres_OldvsYoung_Tcells_Female$logFC, decreasing = c(T), method="radix"),]; DEres_OldvsYoung_Tcells_Female$gene <- rownames(DEres_OldvsYoung_Tcells_Female); DEres_OldvsYoung_Tcells_Female$comparison <- "OldvsYoung_Tcells_Female"; DEres_OldvsYoung_Tcells_Female <- DEres_OldvsYoung_Tcells_Female[,c("comparison","gene","logFC","adj.P.Val")]; head(DEres_OldvsYoung_Tcells_Female)\
+DEres_OldvsYoungFemale <- topTable(eBayes_OldvsYoungFemale, coef = 1, sort.by = "logFC", n = Inf, p.value = 0.05); DEres_OldvsYoungFemale <- DEres_OldvsYoungFemale[order(DEres_OldvsYoungFemale$logFC, decreasing = c(F), method="radix"),]; DEres_OldvsYoungFemale$gene <- rownames(DEres_OldvsYoungFemale); DEres_OldvsYoungFemale$comparison <- "OldvsYoungFemale"; DEres_OldvsYoungFemale <- DEres_OldvsYoungFemale[,c("comparison","gene","logFC","adj.P.Val")]; head(DEres_OldvsYoungFemale,)\
+\
+all_DEGs <- rbind(DEres_BcellsvsTcells_AllAges,DEres_OldvsYoung_Bcell,DEres_OldvsYoung_Tcell, DEres_OldvsYoung_Bcells_Female,DEres_OldvsYoung_Tcells_Female,DEres_OldvsYoungFemale)\
+write.table(all_DEGs[order(all_DEGs$comparison, all_DEGs$logFC, decreasing = c(F,T), method="radix"),], "/opt/data/GeoMx/Dan_Spleen/All_DEGs_04-24-24.tsv", quote = F, row.names = F, sep = "\\t")\
+\
+\
+pdf("/opt/data/GeoMx/Dan_Spleen/StandR_RUVCorrectedByOrigin_VolcanoPlots_06-03-24.pdf")\
+\
+#volcanoplot(efit_BvsT_AllAges, coef = 1, style = "p-value", highlight = 2, names = c("Trac", "Cd79a"), hl.col="blue", xlab = "Log2 Fold Change", ylab = NULL, pch=16, cex=0.35)\
+\
+size_legendLabSize = 7\
+\
+\
+EnhancedVolcano(DEres_OldvsYoungFemale, lab = rownames(DEres_OldvsYoungFemale), x = 'logFC', y = 'adj.P.Val', \
+                selectLab = c("Ccl5","Igha","Ighg","B2m","S100a11","H2-D1","Gzmk","Tigit","Zeb2","H2-Ab1","H2-K1","Bhlhe40","Lgals1","Xbp1","Irf1","H2-Q6","Cd38","H2-Eb1","Mki67","Fcgr2b",\
+                              "Hif1a","Pdcd1","H2-Aa","H2-DMb2","Tlr9","H2-DMa","Cd82","Izumo1r","Stat1","Lag3","Prdm1","Cd44","Tcf4","H2-T23","Ccr9","Sell","Lef1","Satb1","Dapl1"),\
+                xlab = bquote(~Log[2]~ 'fold change'), title = " Old vs Young Female", subtitle = "", axisLabSize = 8, \
+                pCutoff = 0.05,pointSize = .5,labSize = 4.0,labCol = 'black',labFace = 'bold',boxedLabels = T,colAlpha = 4/5,FCcutoff = 0.25,\
+                legendPosition = 'bottom',legendLabSize = 8,legendIconSize = 4.0,drawConnectors = T,widthConnectors = 1.0,colConnectors = 'black')\
+\
+dev.off()\
+\
+\
+EnhancedVolcano(DEres_BcellsvsTcells_AllAges, lab = rownames(DEres_BcellsvsTcells_AllAges), x = 'logFC', y = 'adj.P.Val', selectLab = c("Trac", "Tcf7", "Cd79a", "Cd79b"), \
+                 xlab = bquote(~Log[2]~ 'fold change'), title = "Bcells vs Tcells (All Ages)", subtitle = "", axisLabSize = 8, \
+                 pCutoff = 0.05,FCcutoff = 0.5,pointSize = 1.0,labSize = 6.0,labCol = 'black',labFace = 'bold',boxedLabels = TRUE,colAlpha = 4/5,\
+                 legendPosition = 'bottom',legendLabSize = 8,legendIconSize = 4.0,drawConnectors = TRUE,widthConnectors = 1.0,colConnectors = 'black')\
+\
+EnhancedVolcano(DEres_OldvsYoung_Bcell, lab = rownames(DEres_OldvsYoung_Bcell), x = 'logFC', y = 'adj.P.Val', selectLab = c("Igkc","Ighm","Igha","Jchain","Ccl5","Ighg","LOC118567918","Hsp90b1","Txndc5","Bgn","Cstdc5","Lamb3",\
+                                                                                                                            "Olfr979","Olfr1459","Gmnc","Olfr1322","Kcnj1","Cldn34c2","Gm6040","Adam29"), \
+                 xlab = bquote(~Log[2]~ 'fold change'), title = "B-cells, Old vs Young", subtitle = "", axisLabSize = 8, \
+                 pCutoff = 0.05, FCcutoff = 0.5, pointSize = 1.0, labSize = 2.0, labCol = 'black', labFace = 'bold', boxedLabels = TRUE, colAlpha = 4/5, \
+                 legendPosition = 'bottom', legendLabSize = 8, legendIconSize = 4.0, drawConnectors = TRUE, widthConnectors = 1.0, colConnectors = 'black')\
+\
+EnhancedVolcano(DEres_OldvsYoung_Tcell, lab = rownames(DEres_OldvsYoung_Tcell), x = 'logFC', y = 'adj.P.Val', selectLab = c("Igkc","Ighm","Ccl5","Mzb1","Tigit","Jchain","Serpina3g","H3c2","Lyz2","S100a11","Nlrp4e",\
+                                                                                                                            "Olfr734","Vmn1r101","Gm46934","Map10","Pramel46","Cldn34c2","Dapl1","Rex2","Olfr725"), \
+                 xlab = bquote(~Log[2]~ 'fold change'), title = "T-cells, Old vs Young", subtitle = "", axisLabSize = 8, \
+                 pCutoff = 0.05, FCcutoff = 0.5, pointSize = 1.0, labSize = 2.0, labCol = 'black', labFace = 'bold', boxedLabels = TRUE, colAlpha = 4/5, \
+                 legendPosition = 'bottom', legendLabSize = 8, legendIconSize = 4.0, drawConnectors = TRUE, widthConnectors = 1.0, colConnectors = 'black')\
+\
+\
+dev.off()\
+\
+de_results_BvsT_AllAges %>% \
+  mutate(DE = ifelse(logFC > 0 & adj.P.Val <0.05, "UP", ifelse(logFC <0 & adj.P.Val<0.05, "DOWN", "NOT DE"))) %>%  ggplot(aes(AveExpr, logFC, col = DE)) + \
+  geom_point(shape = 1, size = 1) + geom_text_repel(data = de_genes_toptable_BvsT_AllAges %>% mutate(DE = ifelse(logFC > 0 & adj.P.Val <0.05, "UP", \
+                            ifelse(logFC <0 & adj.P.Val<0.05, "DOWN", "NOT DE"))) %>% rownames_to_column(), aes(label = rowname), fill = alpha(c("white"),0.5)) +\
+  theme_bw() + xlab("Average log-expression") + ylab("Log-fold-change") + ggtitle("B-cells vs T-cells (limma-voom)") + scale_color_manual(values = c("blue","gray","red")) + theme(text = element_text(size=15))\
+\
+de_results_OldvsYoung_Bcell %>% \
+  mutate(DE = ifelse(logFC > 0 & adj.P.Val <0.05, "UP", ifelse(logFC <0 & adj.P.Val<0.05, "DOWN", "NOT DE"))) %>%  ggplot(aes(AveExpr, logFC, col = DE)) + \
+  geom_point(shape = 1, size = 1) + geom_text_repel(data = de_genes_toptable_OldvsYoung_Bcell %>% mutate(DE = ifelse(logFC > 0 & adj.P.Val <0.05, "UP", \
+                                ifelse(logFC <0 & adj.P.Val<0.05, "DOWN", "NOT DE"))) %>% rownames_to_column(), aes(label = rowname), fill = alpha(c("white"),0.5)) +\
+  theme_bw() + xlab("Average log-expression") + ylab("Log-fold-change") + ggtitle("Old vs Young, B-cells (limma-voom)") +  scale_color_manual(values = c("blue","gray","red")) + theme(text = element_text(size=15))\
+\
+\
+de_results_OldvsYoung_Tcell %>% \
+  mutate(DE = ifelse(logFC > 0 & adj.P.Val <0.05, "UP", ifelse(logFC <0 & adj.P.Val<0.05, "DOWN", "NOT DE"))) %>%  ggplot(aes(AveExpr, logFC, col = DE)) + \
+  geom_point(shape = 1, size = 1) + geom_text_repel(data = de_genes_toptable_OldvsYoung_Tcell %>% mutate(DE = ifelse(logFC > 0 & adj.P.Val <0.05, "UP", \
+                                ifelse(logFC <0 & adj.P.Val<0.05, "DOWN", "NOT DE"))) %>% rownames_to_column(), aes(label = rowname), fill = alpha(c("white"),0.5)) +\
+  theme_bw() + xlab("Average log-expression") + ylab("Log-fold-change") + ggtitle("Old vs Young, T-cells  (limma-voom)") + scale_color_manual(values = c("blue","gray","red")) + theme(text = element_text(size=15))\
+\
+#dev.off()\
+\
+\
+\
+\
+#par(mfrow=c(4,3))\
+#boxplot(unlist(assay(spe_lrb)['MYH11',]) ~ colData(spe_lrb)[,'Age']) \
+#boxplot(unlist(assay(spe_lrb)['PRPS2',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['ZNF331',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['HSPA1B',]) ~ colData(spe_lrb)[,'Age']) \
+#boxplot(unlist(assay(spe_lrb)['HSPA1A',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['DNAJB1',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['CRYAB',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['HMOX1',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['CDKN1A',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['CDKN2A',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['MKI67',]) ~ colData(spe_lrb)[,'Age'])\
+#boxplot(unlist(assay(spe_lrb)['MMP2',]) ~ colData(spe_lrb)[,'Age'])\
+#\
+#\
+#\
+#nice.col <- brewer.pal(6,name="Dark2")\
+#par(mfrow=c(1,1))\
+#\
+#assayNames(spe_lrb)\
+#assay(spe_lrb) <- "logcounts"\
+\
+#stripchart(unlist(spe_lrb@assays@data$logcounts['MYH11',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=1.3,col=nice.col,#add = T, \
+#           method="jitter",ylab="Normalised log2 expression",main="MYH11")\
+#boxplot(unlist(spe_lrb@assays@data$logcounts['MYH11',]) ~ colData(spe_lrb)[,'Age'], add = T)\
+\
+#p <- ggplot(stripchart(unlist(spe_lrb@assays@data$logcounts['MYH11',]) ~ colData(spe_lrb)[,'Age'], aes(x=dose, y=len, color=dose, shape=dose))) + \
+#      geom_jitter(position=position_jitter(0.2)) + labs(title="Plot of length  by dose",x="Dose (mg)", y = "Length")\
+#\
+#plotCounts(ddsObj, gene = geneID, intgroup = c("CellType", "Status"),\
+#           returnData = T) %>% \
+#  ggplot(aes(x=Status, y=log2(count))) +\
+#  geom_point(aes(fill=Status), shape=21, size=2) +\
+#  facet_wrap(~CellType) +\
+#  expand_limits(y=0)\
+#\
+#MYH11strip <- stripchart(unlist(spe_lrb@assays@data$logcounts['MYH11',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="Normalised log2 expression",main="MYH11")\
+#PRPS2strip <- stripchart(unlist(spe_lrb@assays@data$logcounts['PRPS2',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="PRPS2")\
+#ZNF331strip <- stripchart(unlist(spe_lrb@assays@data$logcounts['ZNF331',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="ZNF331")\
+#HSPA1Bstrip <- stripchart(unlist(spe_lrb@assays@data$logcounts['HSPA1B',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="HSPA1B")\
+#HSPA1Astrip <- stripchart(unlist(spe_lrb@assays@data$logcounts['HSPA1A',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="HSPA1A")\
+#DNAJB1strip <- stripchart(unlist(spe_lrb@assays@data$logcounts['DNAJB1',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="DNAJB1")\
+#CRYABstrip <- stripchart(unlist(spe_lrb@assays@data$logcounts['CRYAB',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="CRYAB")\
+#HMOX1strip <- stripchart(unlist(spe_lrb@assays@data$logcounts['HMOX1',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="HMOX1")\
+#CDKN1Astrip <- stripchart(unlist(spe_lrb@assays@data$logcounts['CDKN1A',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="CDKN1A")\
+#CDKN2Astrip <- stripchart(unlist(spe_lrb@assays@data$logcounts['CDKN2A',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="CDKN2A")\
+#MKI67strip <- stripchart(unlist(spe_lrb@assays@data$logcounts['MKI67',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="MKI67")\
+#MMP2strip <- stripchart(unlist(spe_lrb@assays@data$logcounts['MMP2',]) ~ colData(spe_lrb)[,'Age'],vertical=TRUE,las=2,cex.axis=0.8,pch=16,cex=0.75,col=nice.col,method="jitter",ylab="",main="MMP2")\
+#\
+#\
+#(replayPlot(MYH11strip)|replayPlot(PRPS2strip)|replayPlot(ZNF331strip)) /\
+#(replayPlot(HSPA1Bstrip)|replayPlot(HSPA1Astrip)|replayPlot(DNAJB1strip)) /\
+#(replayPlot(CRYABstrip)|replayPlot(HMOX1strip)|replayPlot(CDKN1Astrip)) /\
+#(replayPlot(CDKN2Astrip)|replayPlot(MKI67strip)|replayPlot(MMP2strip))\
+\
+\
+\
+\
+###############################################################################################################################################################################\
+#\
+#   searchable table app\
+\
+\
+\
+library(DT)\
+updn_cols <- c(RColorBrewer::brewer.pal(6, 'Greens')[2], RColorBrewer::brewer.pal(6, 'Purples')[2])\
+de_genes_toptable_BvT %>% \
+  dplyr::select(c("logFC", "AveExpr", "P.Value", "adj.P.Val")) %>%\
+  DT::datatable(caption = 'B cell zone vs. T cell zone in Lymph node (limma-voom)') %>%\
+  DT::formatStyle('logFC',\
+                  valueColumns = 'logFC',\
+                  backgroundColor = DT::styleInterval(0, rev(updn_cols))) %>%\
+  DT::formatSignif(1:4, digits = 4)\
+\
+\
+\
+###############################################################################################################################################################################\
+#\
+#   GSEA and visualisation with vissE\
+\
+library(msigdb)\
+library(GSEABase)\
+\
+msigdb_hs <- getMsigdb(version = '7.2')\
+msigdb_hs <- appendKEGG(msigdb_hs)\
+sc <- listSubCollections(msigdb_hs)\
+\
+gsc <- c(subsetCollection(msigdb_hs, c('h')),\
+         subsetCollection(msigdb_hs, 'c2', sc[grepl("^CP:",sc)]),\
+         subsetCollection(msigdb_hs, 'c5', sc[grepl("^GO:",sc)])) %>%\
+       GeneSetCollection()\
+\
+\
+\
+fry_indices <- ids2indices(lapply(gsc, geneIds), rownames(v), remSpe.empty = FALSE)\
+names(fry_indices) <- sapply(gsc, setName)\
+\
+gsc_category <- sapply(gsc, function(x) bcCategory(collectionType(x)))\
+gsc_category <- gsc_category[sapply(fry_indices, length) > 5]\
+\
+gsc_subcategory <- sapply(gsc, function(x) bcSubCategory(collectionType(x)))\
+gsc_subcategory <- gsc_subcategory[sapply(fry_indices, length) > 5]\
+\
+fry_indices <- fry_indices[sapply(fry_indices, length) > 5]\
+\
+names(gsc_category) = names(gsc_subcategory) = names(fry_indices)\
+\
+fry_indices_cat <- split(fry_indices, gsc_category[names(fry_indices)])\
+fry_res_out <- lapply(fry_indices_cat, function (x) \{\
+  limma::fry(v, index = x, design = design, contrast = contr.matrix[,1], robust = TRUE)\
+\})\
+\
+post_fry_format <- function(fry_output, gsc_category, gsc_subcategory)\{\
+  names(fry_output) <- NULL\
+  fry_output <- do.call(rbind, fry_output)\
+  fry_output$GenesetName <- rownames(fry_output)\
+  fry_output$GenesetCat <- gsc_category[rownames(fry_output)]\
+  fry_output$GenesetSubCat <- gsc_subcategory[rownames(fry_output)]\
+  return(fry_output)\
+\}\
+\
+fry_res_sig <- post_fry_format(fry_res_out, gsc_category, gsc_subcategory) %>%\
+  as.data.frame() %>%\
+  filter(FDR < 0.05) \
+\
+\
+fry_res_sig %>% arrange(FDR) %>% filter(Direction == "Up") %>% .[seq(20),] %>% mutate(GenesetName = factor(GenesetName, levels = .$GenesetName)) %>% \
+  ggplot(aes(GenesetName, -log(FDR))) + geom_bar(stat = "identity", fill = "red") + theme_bw() + coord_flip() + ggtitle("Up-regulated in 67yo")\
+\
+fry_res_sig %>% arrange(FDR) %>% filter(Direction == "Down") %>% .[seq(20),] %>% mutate(GenesetName = factor(GenesetName, levels = .$GenesetName)) %>% \
+  ggplot(aes(GenesetName, -log(FDR))) + geom_bar(stat = "identity", fill = "blue") + theme_bw() + coord_flip() + ggtitle("Down-regulated in 67yo")\
+\
+\
+par(mfrow=c(1,1))\
+\
+de_genes_toptable_BvT_2 <- topTable(efit, coef = 1, sort.by = "logFC", n = 20, p.value = 0.05)\
+dSpissE(fry_res_sig, de_genes_toptable_BvT_2, topN = 4, title = "Old vs Young" )\
+\
+\
+\
+\
+################################################################################################################################################\
+#\
+#         functions\
+\
+dSpissE <- function(fry_out, de_table, topN = 6, title = "", specific_clusters = NA)\{\
+  \
+  n_row = min(1000, nrow(fry_out))\
+  gs_sig_name <- fry_out %>% \
+    filter(FDR < 0.05) %>%\
+    arrange(FDR) %>% \
+    .[1:n_row,] %>% \
+    rownames()\
+  gsc_sig <- gsc[gs_sig_name,]\
+  \
+  gs_Splap <- computeMsigSperlap(gsc_sig, thresh = 0.15)\
+  gs_Spnet <- computeMsigNetwork(gs_Splap, gsc)\
+  \
+  gs_stats <- -log10(fry_out[gs_sig_name,]$FDR)\
+  names(gs_stats) <- gs_sig_name\
+  \
+  #identify clusters\
+  grps = cluster_walktrap(gs_Spnet)\
+  #extract clustering results\
+  grps = groups(grps)\
+  #sort by cluster size\
+  grps = grps[order(sapply(grps, length), decreasing = TRUE)]\
+  \
+  # write output\
+  output_clusters <- list()\
+  for(i in seq(length(grps)))\{\
+    output_clusters[[i]] <- data.frame(geneset = grps[[i]], cluster = paste0("cluster",names(grps)[i]))\
+  \}\
+  output_clusters <<- output_clusters %>% bind_rows()\
+  \
+  if(is.na(specific_clusters))\{\
+    grps <- grps[1:topN]\
+  \} else \{\
+    grps <- grps[specific_clusters %>% as.character()]\
+  \}\
+  \
+  #plot the top 12 clusters\
+  set.seed(36) #set seed for reproducible layout\
+  p1 <<- plotMsigNetwork(gs_Spnet, markGroups = grps, \
+                         genesetStat = gs_stats, rmUnmarkedGroups = TRUE) +\
+    scico::scale_fill_scico(name = "-log10(FDR)")\
+  \
+  p2 <<- plotMsigWordcloud(gsc, grps, type = 'Name')\
+  \
+  genes <- unique(unlist(geneIds(gsc_sig)))\
+  \
+  genes_logfc <- de_table %>% rownames_to_column() %>% filter(rowname %in% genes) %>% .$logFC\
+  names(genes_logfc) <- de_table %>% rownames_to_column() %>% filter(rowname %in% genes) %>% .$rowname\
+  \
+  p3 <<- plotGeneStats(genes_logfc, gsc, grps) +\
+    geom_hline(yintercept = 0, colour = 2, lty = 2) +\
+    ylab("logFC")\
+  \
+  #p4 <- plotMsigPPI(ppi, gsc, grps[1:topN], geneStat = genes_logfc) +\
+  #  guides(col=guide_legend(title="logFC"))\
+  \
+  print(p2 + p1 + p3 + patchwork::plot_layout(ncol = 3) +\
+          patchwork::plot_annotation(title = title))  \
+  \
+\}\
+\
+\
+\
+\
+\
+###################################################################################################################################################################################################\
+\
+\
+  drawPCA(spe_object,\
+    dims = dims,\
+    precomputed = precomputed, assay = assay, ...\
+  ) +\
+    geom_segment(\
+      data = loadings2plot,\
+      aes(\
+        x = arrow_x, y = arrow_y,\
+        xend = x_end,\
+        yend = y_end\
+      ),\
+      arrow = arrow(length = unit(1 / 2, "picas"), ends = "last"),\
+      color = "black",\
+      linewidth = .5,\
+      alpha = 1,\
+      show.legend = NA\
+    ) +\
+    ggrepel::geom_text_repel(\
+      data = loadings2plot,\
+      aes(\
+        label = rowname,\
+        x = x_end,\
+        y = y_end,\
+        hjust = 0\
+      ),\
+      color = "black",\
+      size = 0\
+    )\
+\}}
