@@ -13,16 +13,16 @@ B_markers <- intersect(B_markers,row.names(B_cell.combined[["RNA"]]$counts))
 
 # subset the matrix by top DEGs for each cell type
 DEGnumber <- 5
-top_gene_per_cluster.T <- T_cell.markers.all %>%
+top_gene_per_cluster.T <- T_cell.markers.all.anno %>%
   group_by(cluster) %>%
   arrange(desc(avg_log2FC)) %>%
   slice_head(n = DEGnumber)
-top_gene_per_cluster.B <- B_cell.markers.all %>%
+top_gene_per_cluster.B <- B_cell.markers.all.anno %>%
   group_by(cluster) %>%
   arrange(desc(avg_log2FC)) %>%
   slice_head(n = DEGnumber)
 top_gene_per_cluster <- unique(c(top_gene_per_cluster.T$gene,top_gene_per_cluster.B$gene, # top genes
-                              T_markers ,B_markers)) # marker genes
+                              T_markers, B_markers)) # marker genes
 
 
 t_data.top <- T_cell.combined[["RNA"]]$counts[top_gene_per_cluster,]
@@ -32,15 +32,26 @@ b_data.top <- B_cell.combined[["RNA"]]$counts[top_gene_per_cluster,]
 T_UMI <- colSums(T_cell.combined[["RNA"]]$counts)
 B_UMI <- colSums(B_cell.combined[["RNA"]]$counts)
 
+# # split column to code cell types
+# library(tidyr)
+# T_cell.combined@meta.data <- T_cell.combined@meta.data %>% 
+#   separate(celltype, into=c("CT_code", "CT_name"), sep=" - ", convert = T, remove = F)
+# B_cell.combined@meta.data <- B_cell.combined@meta.data %>% 
+#   separate(celltype, into=c("CT_code", "CT_name"), sep=" - ", convert = T, remove = F)
+# 
+# save.image(file = "PICseq_revision.RData")
 
 ###### select major cell types #####
-major_T <- c("0_0","0_1","1_0","1_1","2","3","8")
-major_B <- c("0","1","3_1", "9")
+major_T <- c("0","1","2","3","4","5","6","7")
+major_B <- c("0","1","2", "6")
+
+save.image(file = "PICseq_revision.RData")
 
 # annotate major cell types
-T_cell.combined$major <- as.character(T_cell.combined$sub.cluster)
+library(stringr)
+T_cell.combined$major <- str_extract(as.character(T_cell.combined$celltype),"^[0-9]+") #extract the beginning numbers as cluster number
 T_cell.combined$major[!T_cell.combined$major %in% major_T] <- "others"
-B_cell.combined$major <- as.character(B_cell.combined$sub.cluster)
+B_cell.combined$major <- str_extract(as.character(B_cell.combined$celltype),"^[0-9]+") #extract the beginning numbers as cluster number
 B_cell.combined$major[!B_cell.combined$major %in% major_B] <- "others"
 
 # generate dataframe of artificial doublets (AD)
@@ -69,7 +80,7 @@ for (t in major_T){
       comined_TB <- comined_TB/2 # downsampling
       comined_TB[comined_TB < 1] <- 0
       data_AD <- log1p(comined_TB/((T_counts_per_cell + B_counts_per_cell)/2)*1e6) # log CPM of AD
-      data_AD <- t(data_AD)
+      data_AD <- Matrix::t(data_AD)
       row.names(data_AD) <- paste0(AD_label,"_",seq(1,nrow(data_AD)))
       data_AD <- as.data.frame(data_AD)
       data_AD$AD_label <- AD_label # add the doublet label to the dataframe
@@ -85,104 +96,31 @@ combined_data$AD_label <- as.factor(combined_data$AD_label)
 write.csv(combined_data,"TB_combined_data.csv") # normalized without scale
 
 
+
 # export PICs for prediction Major cell types
 PICs_pred <- PICs.combined[["RNA"]]$counts[colnames(combined_data)[-ncol(combined_data)],]
 # calculate the total count per cell
 PICs_UMI <- colSums(PICs.combined[["RNA"]]$counts)
 PICs_pred <- log1p(PICs_pred/PICs_UMI*1e6) # log of CPM
-PICs_pred <- as.data.frame(t(PICs_pred))
+PICs_pred <- as.data.frame(Matrix::t(PICs_pred))
 # scale the data
 PICs_pred_scaled <- scale(PICs_pred)
 
-# export the matrix for model building in the script 'Classifier4PICs.ipynb' 
+# export the matrix for model building in the script 'Classifier4PICs.ipynb'
 # faster but bigger size in csv
 write.csv(PICs_pred,"PICs_pred.csv") # normalized without scale
 
-
-### annotation tranlation ###
-# # A translator of cell type ID to annotation results
-# PICs.combined$predicted_PICs
-# 
-T_cell.combined$sub.cluster.char <- as.character(T_cell.combined$sub.cluster)
-
-# update meatadata
-T_cell.combined@meta.data$cell_type <- case_when(T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "0_0" ~ "TFH Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "0_1" ~ "Tregs",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "1_0" ~ "CD8+ Ex/Mem T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "1_1" ~ "CD4+ Ex/Mem T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "1_2" ~ "CCL3+ CCL4+ Ex/Mem T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "2" ~ "CD4+ Naive T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "3" ~ "CD8+ Naive T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "4" ~ "CD8+ CM T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "5" ~ "Lars2hi Malat1hi T cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "6" ~ "Trbv3+ Naive T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "7_0" ~ "Myeloid-like T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "7_1" ~ "Ki67+ T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "8" ~ "CD4+ IFITM+ CISH+ T Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "9" ~ "NKT Cells",
-                                                 T_cell.combined@meta.data$sub.cluster.char ==
-                                                   "10" ~ "Trbv4+ T Cells")
-
-B_cell.combined$sub.cluster.char <- as.character(B_cell.combined$sub.cluster)
-B_cell.combined@meta.data$cell_type <- case_when(B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "0" ~ "FOBs",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "1" ~ "MZBs",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "2" ~ "Iglv1-3+ Immature B Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "3_0" ~ "Zeb2lo B Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "3_1" ~ "ABCs",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "4" ~ "B1 Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "5" ~ "Igkv1-135+ B cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "6" ~ "Igkv10-96+ B Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "7" ~ "Igkv1-110+ B Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "8" ~ "Srmhi B Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "9" ~ "GC B Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "10" ~ "MBCs",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "11" ~ "Igkv1-117+ B Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "12" ~ "PBs",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "13" ~ "Myeloid-Like B Cells",
-                                                 B_cell.combined@meta.data$sub.cluster.char ==
-                                                   "14" ~ "Igkv1-99+ B Cells")
-
-
+save.image(file = "PICseq_revision.RData")
 
 
 # import PICs prediction result from the output of the script 'Classifier4PICs.ipynb' 
-PICs_predicted_v1 <- read.csv("PICs_predict_v1.csv")
-PICs_anno <- PICs_predicted %>% select(c(Cell_ID,pred))
+PICs_predicted_v1 <- read.csv("PICs_predict_revision.csv")
+PICs_anno <- PICs_predicted_v1 %>% select(c(Cell_ID,pred))
 
-# set the coresponding cell type names after translation
-translate_T <- unique(T_cell.combined$sub.cluster.char)
-names(translate_T) <- unique(T_cell.combined$cell_type)
-translate_B <- unique(B_cell.combined$sub.cluster.char)
-names(translate_B) <- unique(B_cell.combined$cell_type)
+translate_T <- as.character(unique(T_cell.combined$CT_code))
+names(translate_T) <- unique(T_cell.combined$CT_name)
+translate_B <- as.character(unique(B_cell.combined$CT_code))
+names(translate_B) <- unique(B_cell.combined$CT_name)
 # convert to annotated cell types
 toTranslate_name <- PICs_anno$pred
 for (t in major_T){
@@ -207,30 +145,13 @@ PICs.combined <- AddMetaData(
   col.name = 'predicted_PICs'
 )
 
-# replace with the up-to-date annotations
-predicted_PICs <- PICs.combined$predicted_PICs
-predicted_PICs <- gsub("CD8\\+ EM T Cells", "CD8+ Ex/Mem T Cells", predicted_PICs)
-predicted_PICs <- gsub("CX4CR1_hi CD4\\+ EM T Cells", "CD4+ Ex/Mem T Cells", predicted_PICs)
-predicted_PICs <- gsub("Nlrp6\\+ CD4\\+ EM T Cells", "CD4+ IFITM+ CISH+ T Cells", predicted_PICs)
-predicted_PICs <- gsub("Treg", "Tregs", predicted_PICs)
-predicted_PICs_bk <- PICs.combined$predicted_PICs
-PICs.combined$predicted_PICs <- predicted_PICs
-
-
-
 # change of T-B interaction during aging
-PICs.combined$predicted_PICs
-PICs.combined$orig.ident
 PICs.combined$PICs_age <- paste0(PICs.combined$predicted_PICs,"_",PICs.combined$orig.ident)
 
 PIC4compare <- unique(PICs.combined$predicted_PICs)
 PIC4compare <- PIC4compare[!PIC4compare=="unknown"]
 Idents(PICs.combined) <- "PICs_age"
-# for (p in PIC4compare){
-#   DEG.age <- FindMarkers(PICs.combined, assay = "SCT", ident.1 =paste0(p,"_Aged_PICS"), ident.2 =paste0(p,"_Young_PICS"),
-#                          min.cells.group = 3)
-#   write.csv(DEG.age, paste0(p,"_AgedvsYoung.csv"))
-# }
+
 dir.create("DEGs_PICs_aged_vs_young")
 for (p in PIC4compare) {
   tryCatch({
@@ -251,10 +172,10 @@ write.csv(DEG.age, paste0("DEGs_PICs_aged_vs_young/","Overall_AgedvsYoung.csv"))
 # volcano plot for each PICs
 library(EnhancedVolcano)
 vol.plot.ls <- list()
-cell4vol <- list.files("/opt/home/buckcenter.org/fwu/PICseq/DEGs_PICs_aged_vs_young_v1")
-dir.create("PICs_aged_vs_young_Volcano_v1")
+cell4vol <- list.files("/opt/home/buckcenter.org/fwu/PICseq/revision/DEGs_PICs_aged_vs_young")
+dir.create("PICs_aged_vs_young_Volcano")
 for (d in cell4vol){
-  markers4plot <- read.csv(paste0("DEGs_PICs_aged_vs_young_v1/",d))
+  markers4plot <- read.csv(paste0("DEGs_PICs_aged_vs_young/",d))
   # sort genes
   topgenes_u <- markers4plot %>% filter(p_val_adj<0.05 & avg_log2FC>0) %>% arrange(desc(avg_log2FC)) %>% head(n=20)
   topgenes_u <- topgenes_u$X
@@ -277,15 +198,16 @@ for (d in cell4vol){
                               drawConnectors = T, arrowheads=F, min.segment.length=0.3,
                               title = gsub("_AgedvsYoung.csv","",d),
                               subtitle = bquote(italic("Aged vs Young")))
-  ggsave(plot=vol.plot,paste0("PICs_aged_vs_young_Volcano_v1/",d,"_Volcano.pdf"), width=9,height=8)
+  ggsave(plot=vol.plot,paste0("PICs_aged_vs_young_Volcano/",d,"_Volcano.pdf"), width=9,height=8)
   vol.plot.ls[[d]] <- vol.plot
 }
 library(patchwork)
 combined_plot <- wrap_plots(vol.plot.ls, ncol = floor(length(vol.plot.ls)/4))
 print(combined_plot)
-ggsave("PICs_aged_vs_young_Volcano_v1/Volcano_PICs_AgedvsYoung.pdf",width=25,height=30)
+ggsave("PICs_aged_vs_young_Volcano/Volcano_PICs_AgedvsYoung.pdf",width=25,height=30)
 
 
+save.image(file = "PICseq_revision.RData")
 
 ### heatmaps of genes and UMIs
 
@@ -295,11 +217,12 @@ T_markers_major <- unique(c("Cd4","Il21","Tox2","Pdcd1","Maf","Bcl6","Cd4","Foxp
                             "Ctla4","Cd8a","Gzmk","Eomes","Cd38","Pdcd1","Ifng","Cd4","Eomes","Cx3cr1",
                             "Gzmk","Ifng","Cd38","Cd4","Ccr7","Sell","Cd8a",
                             "Ccr7","Sell",
-                            "Cd4","Nlrp6","Ifitm1","Ifitm3","Ifitm2","Cish","Cd44"))
+                            "Cd4","Nlrp6","Ifitm1","Ifitm3","Ifitm2","Cish","Cd44","Lgals7","Fas"))
 B_markers_major <- unique(c("Fcer2a","Fchsd2","Icosl","Ms4a4c","Zfp318",
                             "Cr2","Asb2","Myof","Cd1d1","S1pr3","Pik3r4",
                             "Zeb2","Adgre1","Cdkn2a","Itgax","Nt5e","Itgam","Tbx21",
-                            "Gcsam","S1pr2","Mef2b","Jchain","Mki67","Mybl1","Aicda","Slc41a2","Bcl6","Zbtb20","Ighg2b","Ighg2c","Igha"
+                            "Gcsam","S1pr2","Mef2b","Jchain","Mki67","Mybl1","Aicda","Slc41a2","Bcl6","Zbtb20","Ighg2b","Ighg2c","Igha",
+                            "Lgals7","Fas"
 ))
 
 # input major marker genes
@@ -329,12 +252,7 @@ for (t in major_T){
     PIC_markerExp_cmb[[PICs_select]] <- PIC_markerExp
   }
 }
-PIC_markerExp_cmb[["CD4+ IFITM+ CISH+ T Cells and ABCs"]] <- NULL
-PIC_markerExp_cmb[["CD4+ IFITM+ CISH+ T Cells and GC B Cells"]] <- NULL
-# PIC_markerExp_cmb[["Tregs and FOBs"]] <- NULL
-# PIC_markerExp_cmb[["Tregs and MZBs"]] <- NULL
-# PIC_markerExp_cmb[["Tregs and ABCs"]] <- NULL
-# PIC_markerExp_cmb[["Tregs and GC B Cells"]] <- NULL
+
 
 PICs_label_cmb <- PICs_label_cmb[!PICs_label_cmb %in% c("CD4+ IFITM+ CISH+ T Cells and ABCs","CD4+ IFITM+ CISH+ T Cells and GC B Cells")]
 library(tidyverse)
@@ -342,21 +260,10 @@ PIC_markerExp_cmb.mx <- reduce(PIC_markerExp_cmb,cbind)
 
 PIC_markerExp_cmb.mx <- as.matrix(PIC_markerExp_cmb.mx)
 
+library(ComplexHeatmap)
 library(circlize)
 library(viridis)
 library(RColorBrewer)
-# Define specific breakpoints
-#breaks <- c(0, 0.5, 1, 1.5)
-# Get the colors from the magma palette
-colors <- magma(10,direction = -1)
-# Create color function with colorRamp2
-col_fun <- colorRamp2(breaks, colors)
-
-# Define the range of your data for color mapping
-data_range <- range(PIC_markerExp_cmb.mx, na.rm = TRUE)
-# Create a color function using colorRamp2
-color_function <- colorRamp2(c(data_range[1], data_range[2]), rev(magma(10)))
-
 
 # annotate condition
 age_anno <- PICs.combined$orig.ident[colnames(PIC_markerExp_cmb.mx)]
@@ -375,7 +282,7 @@ B_cell_label <- gsub(".* and ","",PICs_label_cmb)
 
 # T cell colors
 T_cells_colors <- brewer.pal(9, "YlOrRd")
-T_cells_colors <- T_cells_colors[3:9]
+T_cells_colors <- T_cells_colors[1:8]
 names(T_cells_colors) <- unique(T_cell_label)
 # B cell colors
 B_cells_colors <- brewer.pal(9, "YlGn")
@@ -391,7 +298,7 @@ ha.bottom = HeatmapAnnotation(
 )
 
 
-pdf(file="heatmap_PICs_GeneExp_v1.pdf", width=14, height = 12)
+pdf(file="heatmap_PICs_GeneExp_revision.pdf", width=14, height = 12)
 ht <- Heatmap(PIC_markerExp_cmb.mx,
               col = rev(magma(10)),
               name = "log(normalized UMIs)",
@@ -413,7 +320,7 @@ dev.off()
 # UMIs: Create a scatter plot with smaller dots major cells only
 #PICs_UMI_major <- PICs_UMI[PICs.combined$predicted_PICs %in% PIC4compare]
 PICs_UMI_major <- PICs_UMI[colnames(PIC_markerExp_cmb.mx)]
-pdf("PICs_UMI_major_v1.pdf", width = 10, height = 3)
+pdf("PICs_UMI_major_revision.pdf", width = 10, height = 3)
 
 plot(x = seq_along(PICs_UMI_major), y = log2(PICs_UMI_major), 
      main = paste0(length(PICs_UMI_major)," PICs"), 
@@ -425,10 +332,16 @@ plot(x = seq_along(PICs_UMI_major), y = log2(PICs_UMI_major),
 dev.off()
 
 
+save.image(file = "PICseq_revision.RData")
+
 ### Cell component changes ###
 translated_major_T <- names(translate_T[translate_T %in% major_T])
-prop_major_T <- T_cell.combined$cell_type[T_cell.combined$cell_type %in% translated_major_T]
+prop_major_T <- T_cell.combined$CT_name[T_cell.combined$CT_name %in% translated_major_T]
 table(prop_major_T)
+
+translated_major_B <- names(translate_B[translate_B %in% major_B])
+prop_major_B <- B_cell.combined$CT_name[B_cell.combined$CT_name %in% translated_major_B]
+table(prop_major_B)
 
 prop_PICs4T <- PICs.combined$predicted_PICs[PICs.combined$predicted_PICs != "unknown"]
 prop_PICs4T <- gsub(" and.*","",prop_PICs4T)
@@ -460,6 +373,56 @@ prop_A_major_PIC4T <- prop_age(prop_major=prop_PICs4T, SeuratObj=PICs.combined, 
 prop_Y_major_PIC4B <- prop_age(prop_major=prop_PICs4B, SeuratObj=PICs.combined, Aged_ident="Young_PICS")
 prop_A_major_PIC4B <- prop_age(prop_major=prop_PICs4B, SeuratObj=PICs.combined, Aged_ident="Aged_PICS")
 
+save.image(file = "PICseq_revision.RData")
+
+# function to plot cell proportion changes
+cell_prop_bar_df <- function(prop_major,prop_PICs, cellType, age="Gernal"){
+  sub.prop2PIC<-data.frame()
+  #sub.treat<-T_cell.combined@meta.data[T_cell.combined$orig.ident==l,]
+  sub.prop.A<-data.frame(table(prop_major)/sum(table(prop_major)))
+  sub.prop.A$Group <- cellType
+  names(sub.prop.A) <- c("Cell_Types", "Freq", "Group")
+  sub.propPIC<-data.frame(table(prop_PICs)/sum(table(prop_PICs)))
+  sub.propPIC$Group <- "PICs"
+  names(sub.propPIC) <- c("Cell_Types", "Freq", "Group")
+  sub.prop2PIC<-rbind(sub.prop.A,sub.propPIC)
+  
+  ## set the levels in order we want
+  sub.prop2PIC$Group<-factor(sub.prop2PIC$Group, 
+                             levels=c("PICs",cellType))
+  
+  ## prep cumulative sums for line links
+  cell.stack.wide1<-sub.prop2PIC %>%
+    pivot_wider(names_from=Group, values_from=Freq) %>% 
+    arrange(by=desc(Cell_Types)) %>% 
+    replace(is.na(.), 0) %>% # remove NA
+    mutate(y=cumsum(PICs),
+           yend=cumsum(.data[[cellType]]))
+  ## set the levels in order we want
+  sub.prop2PIC$labs<-round(sub.prop2PIC$Freq,3) # prepare cell proportion label
+  sub.prop2PIC$labs[sub.prop2PIC$labs<0.05]<-""
+  #sub.propT_PIC_Y$Group <- factor(sub.propT_PIC_Y$Group, levels = c("PICs","T cells"))
+  write.csv(sub.prop2PIC,paste0(cellType,"_",age,".csv"))
+  p1 <- ggplot(sub.prop2PIC, aes(fill=Cell_Types, y=Freq, x=Group)) + 
+    geom_bar(stat="identity", width=0.5, col="black") +
+    geom_segment(data = cell.stack.wide1, linetype="dashed", aes(x=1.25, xend=1.75, y=y, yend=yend)) +
+    geom_text(aes(label=labs), size=3, position=position_stack(vjust=0.5)) +
+    theme_minimal() + 
+    #scale_fill_npg() +
+    scale_fill_simpsons() +
+    coord_flip() +
+    theme(
+      legend.position = "bottom",
+      legend.text = element_text(size = 12),
+      axis.title.x = element_text(size = 14),
+      axis.text.y = element_text(size = 14),
+      axis.text.x = element_text(size = 12),
+      plot.title = element_text(hjust = 0.5, size = 20)
+    ) + 
+    labs(x="", y=paste0(cellType, " subset distribution"), title = age) +
+    guides(fill=guide_legend(title='Cell types'))
+  return(p1)
+}
 
 # T cell in PIC general
 sub.propT_PIC_G <- cell_prop_bar_df(prop_major_T,prop_PICs4T,"T cells", "General")
@@ -495,6 +458,31 @@ combined_plot
 ggsave("B_PICs_prop_v1.pdf",plot=combined_plot, width=9, height=10)
 
 
+# Function for calculating p-values of cell prop changes
+P_value_prop <- function(prop_major,prop_PICs4Cell){
+  cell2p <- intersect(unique(prop_major),unique(prop_PICs4Cell))
+  cell_prop_table <- table(prop_major); cell_prop_table <- cell_prop_table[names(cell_prop_table) %in% cell2p]
+  cell_in_PICs_table <- table(prop_PICs4Cell); cell_in_PICs_table <- cell_in_PICs_table[names(cell_in_PICs_table) %in% cell2p]
+  # Fisher's Exact test for cell proportation changes
+  P_value_prop.comb <- c()
+  for (c in 1:length(cell_prop_table)){
+    cell_prop <- cell_prop_table[c]
+    print(cell_prop)
+    a <- cell_prop  # cell number in singlet
+    b <- cell_in_PICs_table[names(cell_prop)]  # cell number in PICs
+    c <- sum(cell_prop_table)-cell_prop # other cell number in singlet
+    d <- sum(cell_in_PICs_table)-cell_in_PICs_table[names(cell_prop)]  # other cell number in PICs
+    # Constructing the contingency table
+    table <- matrix(c(a, b, c, d), nrow = 2, byrow = TRUE,
+                    dimnames = list(c("Cell_number", "Other"),
+                                    c("Singlet", "PICs")))
+    # Conducting Fisher's Exact Test
+    result <- fisher.test(table)
+    P_value_prop <- result$p.value; names(P_value_prop) <- names(cell_prop)
+    P_value_prop.comb <- c(P_value_prop.comb,P_value_prop)
+  }
+  return(P_value_prop.comb)
+}
 # calculate p-values of cell prop changes
 T_P_value_prop_overall <- P_value_prop(prop_major_T,prop_PICs4T)
 T_P_value_prop_Young <- P_value_prop(prop_Y_major_T,prop_Y_major_PIC4T)
@@ -522,7 +510,7 @@ B_prop_P_values <- purrr::reduce(list(B_P_value_prop_overall.df,B_P_value_prop_Y
 B_prop_P_values <- tibble::column_to_rownames(B_prop_P_values,"Cell_Types")
 write.csv(B_prop_P_values,"B_prop_P_values.csv")
 
-
+save.image(file = "PICseq_revision.RData")
 
 ### generate expect gene expression pattern from artificial doublets (AD) - all combinations ###
 gene2exam <- top_gene_per_cluster
@@ -531,14 +519,14 @@ b_data.exp <- B_cell.combined[["RNA"]]$counts[gene2exam,]
 
 randSize <- 5000
 combined_data.exp.ls <- list()
-for (t in unique(T_cell.combined$cell_type)){
+for (t in unique(T_cell.combined$CT_name)){
   print(t)
-  t_ct <- names(T_cell.combined$cell_type[T_cell.combined$cell_type==t]) # select cell IDs of a T cell type
-  for (b in unique(B_cell.combined$cell_type)){
+  t_ct <- names(T_cell.combined$CT_name[T_cell.combined$CT_name==t]) # select cell IDs of a T cell type
+  for (b in unique(B_cell.combined$CT_name)){
     print(b)
     AD_label <- paste0(t," and ",b)
     print(paste0("generate artificial doublets (AD): ",AD_label))
-    b_ct <- names(B_cell.combined$cell_type[B_cell.combined$cell_type==b]) # select cell IDs of a B cell type
+    b_ct <- names(B_cell.combined$CT_name[B_cell.combined$CT_name==b]) # select cell IDs of a B cell type
     # random sampling T and B cells
     t_rand <- sample(t_ct,randSize,replace = T)
     b_rand <- sample(b_ct,randSize,replace = T)
@@ -654,18 +642,18 @@ b_data.exp.all <- B_cell.combined[["RNA"]]$counts
 
 randSize <- 5000
 combined_data.exp.all.ls <- list()
-for (t in unique(T_cell.combined$cell_type)){
+for (t in unique(T_cell.combined$CT_name)){
   print(t)
   # select cell IDs of a T cell type
-  t_ct_Young <- T_cell.combined@meta.data %>% filter(cell_type==t & orig.ident=="Young_T_Cells") %>% row.names() # young
-  t_ct_Aged <- T_cell.combined@meta.data %>% filter(cell_type==t & orig.ident=="Aged_T_Cells") %>% row.names() # aged
-  t_ct_overall <- names(T_cell.combined$cell_type[T_cell.combined$cell_type==t]) # overall
-  for (b in unique(B_cell.combined$cell_type)){
+  t_ct_Young <- T_cell.combined@meta.data %>% filter(CT_name==t & orig.ident=="Young_T_Cells") %>% row.names() # young
+  t_ct_Aged <- T_cell.combined@meta.data %>% filter(CT_name==t & orig.ident=="Aged_T_Cells") %>% row.names() # aged
+  t_ct_overall <- names(T_cell.combined$CT_name[T_cell.combined$CT_name==t]) # overall
+  for (b in unique(B_cell.combined$CT_name)){
     print(b)
     # select cell IDs of a B cell type
-    b_ct_Young <- B_cell.combined@meta.data %>% filter(cell_type==b & orig.ident=="Young_B_Cells") %>% row.names() # young
-    b_ct_Aged <- B_cell.combined@meta.data %>% filter(cell_type==b & orig.ident=="Aged_B_Cells") %>% row.names() # aged
-    b_ct_overall <- names(B_cell.combined$cell_type[B_cell.combined$cell_type==b]) # overall
+    b_ct_Young <- B_cell.combined@meta.data %>% filter(CT_name==b & orig.ident=="Young_B_Cells") %>% row.names() # young
+    b_ct_Aged <- B_cell.combined@meta.data %>% filter(CT_name==b & orig.ident=="Aged_B_Cells") %>% row.names() # aged
+    b_ct_overall <- names(B_cell.combined$CT_name[B_cell.combined$CT_name==b]) # overall
     # create name of doublet
     AD_label <- paste0(t," and ",b)
     print(paste0("generate artificial doublets (AD): ",AD_label))
@@ -832,13 +820,13 @@ ObsvsExp.DEGs.ls <- list()
 for (t in major_T){
   t <- names(translate_T[translate_T==t])
   print(t)
-  t_ct <- names(T_cell.combined$cell_type[T_cell.combined$cell_type==t]) # select cell IDs of a T cell type
+  t_ct <- names(T_cell.combined$CT_name[T_cell.combined$CT_name==t]) # select cell IDs of a T cell type
   for (b in major_B){
     b <- names(translate_B[translate_B==b])
     print(b)
     AD_label <- paste0(t," and ",b)
     print(paste0("generate artificial doublets (AD): ",AD_label))
-    b_ct <- names(B_cell.combined$cell_type[B_cell.combined$cell_type==b]) # select cell IDs of a B cell type
+    b_ct <- names(B_cell.combined$CT_name[B_cell.combined$CT_name==b]) # select cell IDs of a B cell type
     # random sampling T and B cells
     t_rand <- sample(t_ct,randSize,replace = T)
     b_rand <- sample(b_ct,randSize,replace = T)
@@ -902,6 +890,8 @@ stopCluster(cl)
 
 ObsvsExp.DEGs.ls0 <- ObsvsExp.DEGs.ls # backup
 
+save.image(file = "PICseq_revision.RData")
+
 # adjust the column name of each element in the list
 for (o in names(ObsvsExp.DEGs.ls)){
   ObsvsExp.DEGs <- ObsvsExp.DEGs.ls[[o]]
@@ -934,10 +924,10 @@ top10_absSum <- absSum_per_gene[1:10] # select 10 most log2FC genes
 
 # volcano plot for each PICs vs AD
 dir.create("ObsvsExp_Volcano")
-major_cell4comp <- names(ObsvsExp.DEGs.ls)
+major_cell4comp <- names(ObsvsExp.DEGs.ls0)
 ObsvsExp.vol.plot.ls <- list()
 for (p in major_cell4comp){
-  ObsvsExp_one_PIC <- ObsvsExp.DEGs.ls[[p]]
+  ObsvsExp_one_PIC <- ObsvsExp.DEGs.ls0[[p]]
   # #markers4plot <- read.csv(paste0("DEGs_PICs_age/",d))
   # # sort genes
   # ObsvsExp_one_PIC$rank <- abs(ObsvsExp_one_PIC$log2FC_T0_0_B0*(-log10(ObsvsExp_one_PIC$adjusted_p_value_T0_0_B0)))
@@ -974,11 +964,11 @@ combined_plot.ObsvsExp <- wrap_plots(ObsvsExp.vol.plot.ls, ncol = 5)
 print(combined_plot.ObsvsExp)
 ggsave("ObsvsExp_Volcano/Volcano_PICs_ObsvsExp.pdf",width=30,height=35)
 
-ObsvsExp.vol.plot.ls1 <- ObsvsExp.vol.plot.ls[!names(ObsvsExp.vol.plot.ls) %in% 
-                                                c("TFH Cells and GC B Cells","Treg and GC B Cells","CD8+ EM T Cells and GC B Cells",
-                                                  "CX4CR1_hi CD4+ EM T Cells and GC B Cells","CD8+ Naive T Cells and ABCs","CD8+ Naive T Cells and GC B Cells")]
-combined_plot.ObsvsExp1 <- wrap_plots(ObsvsExp.vol.plot.ls1, ncol = 5)
-ggsave(plot=combined_plot.ObsvsExp1,"ObsvsExp_Volcano/Volcano_PICs_ObsvsExp1.pdf",width=35,height=30)
+# ObsvsExp.vol.plot.ls1 <- ObsvsExp.vol.plot.ls[!names(ObsvsExp.vol.plot.ls) %in% 
+#                                                 c("TFH Cells and GC B Cells","Treg and GC B Cells","CD8+ EM T Cells and GC B Cells",
+#                                                   "CX4CR1_hi CD4+ EM T Cells and GC B Cells","CD8+ Naive T Cells and ABCs","CD8+ Naive T Cells and GC B Cells")]
+# combined_plot.ObsvsExp1 <- wrap_plots(ObsvsExp.vol.plot.ls1, ncol = 5)
+# ggsave(plot=combined_plot.ObsvsExp1,"ObsvsExp_Volcano/Volcano_PICs_ObsvsExp1.pdf",width=35,height=30)
 
 # save the DEG list
 dir.create("ObsvsExp_DEGs")
@@ -1002,14 +992,14 @@ for (t in major_T){
   t <- names(translate_T[translate_T==t])
   print(t)
   # select cell IDs of a T cell type
-  t_ct_Young <- T_cell.combined@meta.data %>% filter(cell_type==t & orig.ident=="Young_T_Cells") %>% row.names() # young
-  t_ct_Aged <- T_cell.combined@meta.data %>% filter(cell_type==t & orig.ident=="Aged_T_Cells") %>% row.names() # aged
+  t_ct_Young <- T_cell.combined@meta.data %>% filter(CT_name==t & orig.ident=="Young_T_Cells") %>% row.names() # young
+  t_ct_Aged <- T_cell.combined@meta.data %>% filter(CT_name==t & orig.ident=="Aged_T_Cells") %>% row.names() # aged
   for (b in major_B){
     b <- names(translate_B[translate_B==b])
     print(b)
     # select cell IDs of a B cell type
-    b_ct_Young <- B_cell.combined@meta.data %>% filter(cell_type==b & orig.ident=="Young_B_Cells") %>% row.names() # young
-    b_ct_Aged <- B_cell.combined@meta.data %>% filter(cell_type==b & orig.ident=="Aged_B_Cells") %>% row.names() # aged
+    b_ct_Young <- B_cell.combined@meta.data %>% filter(CT_name==b & orig.ident=="Young_B_Cells") %>% row.names() # young
+    b_ct_Aged <- B_cell.combined@meta.data %>% filter(CT_name==b & orig.ident=="Aged_B_Cells") %>% row.names() # aged
     # if non of t_ct_Young, t_ct_Aged, b_ct_Young, and b_ct_Aged is zero
     if (length(t_ct_Young)>0 & length(t_ct_Aged)>0 & length(b_ct_Young)>0 & length(b_ct_Aged)>0){
       AD_label <- paste0(t," and ",b)
@@ -1309,7 +1299,7 @@ results_df$adjusted_p_value <- p.adjust(results_df$p_value, method = "BH")
 ObsvsExp.DEGs.Aged.overall.df <- results_df
 write.csv(ObsvsExp.DEGs.Aged.overall.df,"ObsvsExp.DEGs.Aged.overall.csv")
 
-
+save.image(file = "PICseq_revision.RData")
 
 
 
