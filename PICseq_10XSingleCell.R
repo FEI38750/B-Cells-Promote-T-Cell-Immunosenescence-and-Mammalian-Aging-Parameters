@@ -489,9 +489,7 @@ B1_compare <- FindMarkers(B_cell.combined,ident.1="4",ident.2 = "5")
 write.csv(B1_compare,"B1_compare_4vs5.csv")
 
 
-## go to PICseq_script_revision.R
-
-
+## go to PICseq_script.R
 
 
 
